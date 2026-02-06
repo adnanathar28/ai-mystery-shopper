@@ -5,6 +5,9 @@ const path = require('path');
 const MysteryShopper = require('./shopper');
 require('dotenv').config();
 
+console.log("GEMINI_API_KEY value:", process.env.GEMINI_API_KEY);
+console.log("GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -13,7 +16,7 @@ app.use(express.json());
 // This maps http://localhost:3001/sessions/ -> public/sessions/
 app.use('/sessions', express.static(path.join(__dirname, '../public/sessions')));
 
-const shopper = new MysteryShopper(process.env.OPENAI_API_KEY);
+const shopper = new MysteryShopper(process.env.GEMINI_API_KEY);
 
 app.post('/api/shop', async (req, res) => {
   const { url, goal } = req.body;
