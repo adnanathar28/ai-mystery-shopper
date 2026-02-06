@@ -68,3 +68,6 @@ npm start
 - **Frontend**: Runs on Port `3000`. React Dashboard to view missions.
 
 Happy Coding! 🤖
+
+
+npm install playwright-extra puppeteer-extra-plugin-stealth run this asw
