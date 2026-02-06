@@ -1,11 +1,11 @@
 // src/frictionEngine.js
 
-class FrictionEngine {
+class FrictionEngine { //whole point of this is to turn frustration into a single number and clear diagnosis that a human can act on
     constructor() {
-        this.events = [];
+        this.events = []; // a notebook
     }
 
-    logEvent(type, details) {
+    logEvent(type, details) { //imp, shopper.js calls this whenever something useful has to be logged
         this.events.push({
             type, // 'ai_thought', 'ui_error', 'navigation'
             timestamp: Date.now(),
@@ -13,7 +13,7 @@ class FrictionEngine {
         });
     }
 
-    calculateScore() {
+    calculateScore() { //quantifies the pain
         let score = 0;
         let recentUrls = [];
         let criticalFailure = false;
@@ -38,7 +38,7 @@ class FrictionEngine {
             if (event.type === 'ui_error') score += 15;
 
             // 4. Backtracking (Circular Navigation)
-            if (event.type === 'navigation') {
+            if (event.type === 'navigation') { //if user keeps ending up on same page
                 if (recentUrls.includes(details.url)) {
                     score += 15; 
                 }

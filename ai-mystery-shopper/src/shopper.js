@@ -5,13 +5,13 @@ const FrictionEngine = require('./frictionEngine');
 const fs = require('fs');
 const path = require('path');
 
-const USER_DATA_DIR = path.join(__dirname, '../public/user_data');
+const USER_DATA_DIR = path.join(__dirname, '../public/user_data'); //keeps cookies, avoids fresh browser every run, makes bot more human
 
 class MysteryShopper {
     constructor(apiKey) {
     this.gemini = new GoogleGenerativeAI(apiKey);
     this.model = this.gemini.getGenerativeModel({
-        model: 'gemini-flash-latest',
+        model: 'gemini-1.5-flash',
     });
     this.frictionEngine = new FrictionEngine();
     }
@@ -27,19 +27,19 @@ class MysteryShopper {
       sessionDirName
     );
 
-    fs.mkdirSync(sessionPath, { recursive: true });
+    fs.mkdirSync(sessionPath, { recursive: true }); //creates folder
 
     console.log(
       `[Shopper] Launching Universal Mobile Agent (${mobileDevice.userAgent})`
     );
 
     const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
-      headless: false,
+      headless: false, //so we can see
       channel: 'chrome',
       args: [
         '--disable-blink-features=AutomationControlled',
         '--no-sandbox',
-        '--disable-infobars',
+        '--disable-infobars', //makes but look more human
         '--disable-features=IsolateOrigins,site-per-process,PasswordLeakDetection,SafeBrowsingProtectionLevelToEnhanced,ExtensionsToolbarMenu',
         '--disable-save-password-bubble',
         '--deny-permission-prompts',
@@ -50,18 +50,18 @@ class MysteryShopper {
       ...mobileDevice,
       recordVideo: {
         dir: sessionPath,
-        size: { width: 390, height: 844 },
+        size: { width: 390, height: 844 }, //every run gets video evidence
       },
     });
 
     const page =
       context.pages().length > 0
         ? context.pages()[0]
-        : await context.newPage();
+        : await context.newPage(); //gets the pages
 
-    const sessionLogs = { errors: [], console: [] };
+    const sessionLogs = { errors: [], console: [] }; //tracks network failures etc
 
-    page.on('response', (response) => {
+    page.on('response', (response) => { //network error listener
       const resUrl = response.url();
       if (
         resUrl.match(
@@ -70,7 +70,7 @@ class MysteryShopper {
       )
         return;
 
-      if (response.status() >= 400) {
+      if (response.status() >= 400) { //if backend breaks it is now logged, this feeds diagnostic intelligence
         sessionLogs.errors.push({
           status: response.status(),
           url: resUrl,
@@ -78,7 +78,7 @@ class MysteryShopper {
       }
     });
 
-    page.on('console', (msg) => {
+    page.on('console', (msg) => { //console error listener, if frontend crashes we catch it
       if (msg.type() === 'error') {
         sessionLogs.console.push(msg.text());
       }
@@ -94,12 +94,12 @@ class MysteryShopper {
       console.log(`[Shopper] Navigating to target: ${url}`);
       await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-      while (!completed && stepCount < MAX_STEPS) {
+      while (!completed && stepCount < MAX_STEPS) { //the brain AI loop
         stepCount++;
         console.log(`\n--- Step ${stepCount} ---`);
         await page.waitForTimeout(2000);
 
-        const screenshotBuffer = await page.screenshot({
+        const screenshotBuffer = await page.screenshot({ // the eyes of the agent
           type: 'jpeg',
           quality: 60,
         });
@@ -110,7 +110,7 @@ class MysteryShopper {
           screenshotBuffer
         );
 
-        if (base64Image === lastScreenshot) {
+        if (base64Image === lastScreenshot) { //detects stuck state
           console.log('⚠️ Visual Warning: Viewport static since last step.');
         }
         lastScreenshot = base64Image;
@@ -120,7 +120,7 @@ class MysteryShopper {
           consoleErrors: sessionLogs.console.slice(-3),
         };
 
-        const aiDecision = await this.analyzePage(
+        const aiDecision = await this.analyzePage( //the ai analysis, most important. Sends screenshot, goal, history, errors to gemini vision.
           base64Image,
           goal,
           steps,
@@ -167,7 +167,7 @@ class MysteryShopper {
           break;
         }
 
-        await this.executeAction(page, aiDecision);
+        await this.executeAction(page, aiDecision); //playwright clicks types scrolls, using fuzzy visual selectors not IDs
       }
     } catch (error) {
       console.error('[Shopper] System Error:', error);
@@ -193,7 +193,7 @@ class MysteryShopper {
     return report;
   }
 
-  async analyzePage(base64Image, goal, history, logs) {
+  async analyzePage(base64Image, goal, history, logs) { //Sends ss to gemini and asks, if you were a confused human, what wd you do next and why?
     const prompt = `
 You are an AI Mystery Shopper on a mobile device.
 
@@ -204,7 +204,7 @@ RECENT HISTORY:
 ${JSON.stringify(history.slice(-2))}
 
 TECHNICAL CONTEXT:
-Network Errors: ${JSON.stringify(logs.networkErrors)}
+Network Errors: ${JSON.stringify(logs.networkErrors)} //these both are technical context, ai can reason better
 Console Errors: ${JSON.stringify(logs.consoleErrors)}
 
 Return ONLY valid JSON in this exact format:
