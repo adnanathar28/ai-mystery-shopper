@@ -200,16 +200,21 @@ class MysteryShopper {
 
   async analyzePage(base64Image, goal, history, logs) { //Sends ss to gemini and asks, if you were a confused human, what wd you do next and why?
     const prompt = `
-You are an AI Mystery Shopper on a mobile device.
+You are an AI Mystery Shopper on a mobile device. Look at the screen.
 
 GOAL:
 "${goal}"
+
+IMPORTANT RULES:
+1. If you see the page clearly and there are no error messages, your diagnosis MUST be "Healthy".
+2. Do not report a "Backend Error" unless you see a 500 error or the page is totally blank.
+3. If you see a button that matches the goal, click it.
 
 RECENT HISTORY:
 ${JSON.stringify(history.slice(-2))}
 
 TECHNICAL CONTEXT:
-Network Errors: ${JSON.stringify(logs.networkErrors)} //these both are technical context, ai can reason better
+Network Errors: ${JSON.stringify(logs.networkErrors)} 
 Console Errors: ${JSON.stringify(logs.consoleErrors)}
 
 Return ONLY valid JSON in this exact format:

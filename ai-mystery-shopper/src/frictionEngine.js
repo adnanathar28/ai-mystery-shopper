@@ -22,14 +22,14 @@ class FrictionEngine { //whole point of this is to turn frustration into a singl
             const { details } = event;
 
             // 1. AI Subjective Frustration (0-10)
-            if (details.aiFrustrationLevel) {
-                score += details.aiFrustrationLevel * 4; // Reduced weight slightly
+            if (details.aiFrustrationLevel>5) {
+                score += details.aiFrustrationLevel * 2; // Reduced weight slightly
             }
 
             // 2. DIAGNOSIS Penalties (New!)
-            if (details.diagnosis === 'Backend Error') score += 50; // Instant fail
+            if (details.diagnosis === 'Backend Error' ) score += 20; // reduced penalty because of ai hallucinations
             if (details.severity === 'Critical') {
-                score = 100; // Max score immediately
+                score += 80; // Max score immediately
                 criticalFailure = true;
             }
             if (details.severity === 'High') score += 25;
@@ -52,6 +52,18 @@ class FrictionEngine { //whole point of this is to turn frustration into a singl
     }
 
     getReport() {
+        const rawScore = this.calculateScore();
+
+        // ✅ Detect if goal was completed
+        const goalCompleted = this.events.some(
+            e => e.details?.action === 'finish'
+        );
+
+        // ✅ Cap score if journey succeeded
+        const finalScore = goalCompleted
+            ? Math.min(rawScore, 30)
+            : rawScore;
+
         // Filter for the most severe diagnosis found
         const criticalIssues = this.events
             .filter(e => e.details?.severity === 'Critical' || e.details?.severity === 'High')
@@ -59,11 +71,12 @@ class FrictionEngine { //whole point of this is to turn frustration into a singl
 
         return {
             totalEvents: this.events.length,
-            confusionScore: this.calculateScore(),
+            confusionScore: finalScore,
             topDiagnosis: criticalIssues.length > 0 ? criticalIssues[0] : "None",
             log: this.events
         };
     }
+
 }
 
 module.exports = FrictionEngine;
