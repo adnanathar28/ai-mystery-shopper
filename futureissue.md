@@ -1,0 +1,5 @@
+The core issue with CAPTCHA on a deployed server is that the browser runs headlessly, with no screen or user present to solve the visual puzzle. Because the server's IP address is often from a known data center, websites like Google are highly likely to challenge this "suspicious" traffic. Since there is no one to interact with the challenge, the automated agent gets stuck and the mission fails.
+Possible Solutions:
+Manual Warm-Up: Use X11 forwarding to manually solve the CAPTCHA once on the server, creating a trusted profile for future runs.
+CAPTCHA Solving Services: Integrate a third-party API (like 2Captcha) to programmatically solve the CAPTCHA for a small fee per solution.
+Residential Proxies: Route the server's traffic through a home IP address to appear as a regular user, thus avoiding the CAPTCHA challenge altogether.
