@@ -4,6 +4,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const FrictionEngine = require('./frictionEngine');
 const fs = require('fs');
 const path = require('path');
+const Notifier = require('./notifier');
 
 const USER_DATA_DIR = path.join(__dirname, '../public/user_data'); //keeps cookies, avoids fresh browser every run, makes bot more human
 
@@ -11,9 +12,11 @@ class MysteryShopper {
     constructor(apiKey) {
     this.gemini = new GoogleGenerativeAI(apiKey);
     this.model = this.gemini.getGenerativeModel({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
     });
     this.frictionEngine = new FrictionEngine();
+    this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL); // Add this
+
     }
 
 
@@ -190,6 +193,8 @@ class MysteryShopper {
 
     const report = this.frictionEngine.getReport();
     report.videoUrl = `/sessions/${sessionDirName}/recording.webm`;
+    await this.notifier.sendAlert(report, goal, url); //shopper finishes its mission and everything is scored
+
     return report;
   }
 
