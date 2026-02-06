@@ -16,6 +16,7 @@ yarn-error.log*
 # Runtime Data / Screenshots
 public/sessions/
 !public/sessions/.gitkeep
+public/user_data/
 
 # IDEs and Editors
 .vscode/
