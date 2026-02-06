@@ -1,64 +1,66 @@
 // src/frictionEngine.js
 
-/**
- * Calculates a dynamic "Confusion Score" based on session telemetry.
- * Score range: 0 (Smooth) to 100 (Rage Quit).
- */
 class FrictionEngine {
     constructor() {
         this.events = [];
-        this.baselineTimePerStep = 5000; // ms
     }
 
     logEvent(type, details) {
         this.events.push({
-            type, // 'action', 'error', 'hesitation', 'backtrack'
+            type, // 'ai_thought', 'ui_error', 'navigation'
             timestamp: Date.now(),
-            details
+            details // Now includes { diagnosis, severity }
         });
     }
 
     calculateScore() {
         let score = 0;
         let recentUrls = [];
+        let criticalFailure = false;
 
         this.events.forEach((event, index) => {
-            // 1. AI-Reported Frustration (Subjective)
-            if (event.details.aiFrustrationLevel) {
-                score += event.details.aiFrustrationLevel * 5; 
+            const { details } = event;
+
+            // 1. AI Subjective Frustration (0-10)
+            if (details.aiFrustrationLevel) {
+                score += details.aiFrustrationLevel * 4; // Reduced weight slightly
             }
 
-            // 2. Backtracking Detection (Objective)
+            // 2. DIAGNOSIS Penalties (New!)
+            if (details.diagnosis === 'Backend Error') score += 50; // Instant fail
+            if (details.severity === 'Critical') {
+                score = 100; // Max score immediately
+                criticalFailure = true;
+            }
+            if (details.severity === 'High') score += 25;
+
+            // 3. Technical Errors
+            if (event.type === 'ui_error') score += 15;
+
+            // 4. Backtracking (Circular Navigation)
             if (event.type === 'navigation') {
-                if (recentUrls.includes(event.details.url)) {
-                    score += 15; // High penalty for circular navigation
+                if (recentUrls.includes(details.url)) {
+                    score += 15; 
                 }
-                recentUrls.push(event.details.url);
+                recentUrls.push(details.url);
                 if (recentUrls.length > 3) recentUrls.shift();
-            }
-
-            // 3. Error Modals/Toasts Detected
-            if (event.type === 'ui_error') {
-                score += 20;
-            }
-
-            // 4. Hesitation (Time between actions)
-            if (index > 0) {
-                const timeDiff = event.timestamp - this.events[index - 1].timestamp;
-                if (timeDiff > 10000) { // If thinking > 10s
-                    score += 5; 
-                }
             }
         });
 
-        // Cap score at 100
+        if (criticalFailure) return 100;
         return Math.min(Math.max(score, 0), 100);
     }
 
     getReport() {
+        // Filter for the most severe diagnosis found
+        const criticalIssues = this.events
+            .filter(e => e.details?.severity === 'Critical' || e.details?.severity === 'High')
+            .map(e => e.details.diagnosis);
+
         return {
             totalEvents: this.events.length,
             confusionScore: this.calculateScore(),
+            topDiagnosis: criticalIssues.length > 0 ? criticalIssues[0] : "None",
             log: this.events
         };
     }
