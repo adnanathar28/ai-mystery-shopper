@@ -1,0 +1,18 @@
+ai-mystery-shopper/
+├── src/                  <-- BACKEND (The Brain/Engine)
+│   ├── index.js          <-- The Server
+│   ├── shopper.js        <-- The AI Logic
+│   └── frictionEngine.js <-- The Math
+│
+├── client/               
+│   ├── public/           <-- Static Assets (index.html, favicon, etc.)
+│   └── src/              <-- FRONTEND (The Dashboard/Interface)
+│       ├── App.js        <-- The UI Logic
+│       ├── App.css       <-- The UI Styles
+│       ├── index.js      <-- Frontend Entry Point
+│       └── index.css     <-- Global Styles
+│
+├── public/               <-- SHARED STORAGE
+│   └── (Empty)           <-- Folder exists but is currently empty
+│
+└── package.json          <-- Project Manifest
