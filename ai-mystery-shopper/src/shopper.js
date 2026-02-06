@@ -23,7 +23,16 @@ class MysteryShopper {
         const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
             headless: false,
             channel: 'chrome', // Uses your installed Chrome if available
-            args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+            args: [
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+                // --- POPUP BLOCKERS (The Fix for your Screenshot) ---
+                '--disable-features=PasswordLeakDetection', // Stops "Password found in breach"
+                '--disable-save-password-bubble',           // Stops "Save password?"
+                '--deny-permission-prompts',                // Stops "Allow Notifications?"
+                '--disable-infobars',
+                // ----------------------------------------------------
+            ],
             ...mobileDevice, // INJECT MOBILE VIEWPORT & USER AGENT
             recordVideo: { dir: path.join(__dirname, '../public/sessions/videos') } // Video evidence
         });
@@ -40,7 +49,8 @@ class MysteryShopper {
             // --- NOISE FILTER: Ignore analytics that often throw 401s ---
             if (url.includes('backtrace.io') || 
                 url.includes('google-analytics') || 
-                url.includes('segment.io')) {
+                url.includes('segment.io') ||
+                url.includes('doubleclick')) {
                 return;
             }
 
@@ -205,7 +215,7 @@ class MysteryShopper {
         };
 
         try {
-            // --- NEW SCROLL LOGIC ---
+            // --- SCROLL LOGIC ---
             if (decision.action === 'scroll') {
                 // Simulate a finger swipe up (scrolling down)
                 // 600px is roughly one screen height on mobile
@@ -213,7 +223,6 @@ class MysteryShopper {
                 await page.waitForTimeout(1000); 
                 return;
             }
-            // ------------------------
 
             if (decision.action === 'click') {
                 const strategies = [
