@@ -1,18 +1,20 @@
 ai-mystery-shopper/
 ├── src/                  <-- BACKEND (The Brain/Engine)
-│   ├── index.js          <-- The Server
-│   ├── shopper.js        <-- The AI Logic
-│   └── frictionEngine.js <-- The Math
+│   ├── index.js          <-- The Express Server
+│   ├── shopper.js        <-- The AI Agent (Gemini 2.0 Flash)
+│   ├── frictionEngine.js <-- The Friction & Scoring Math
+│   └── notifier.js       <-- Slack/Alert Notifications
 │
-├── client/               
-│   ├── public/           <-- Static Assets (index.html, favicon, etc.)
-│   └── src/              <-- FRONTEND (The Dashboard/Interface)
-│       ├── App.js        <-- The UI Logic
-│       ├── App.css       <-- The UI Styles
-│       ├── index.js      <-- Frontend Entry Point
-│       └── index.css     <-- Global Styles
+├── client/               <-- FRONTEND (The Dashboard)
+│   ├── public/           <-- Static Assets
+│   └── src/              <-- React Source
+│       ├── App.js        <-- UI Logic & State
+│       └── App.css       <-- Styling & Animations
 │
-├── public/               <-- SHARED STORAGE
-│   └── (Empty)           <-- Folder exists but is currently empty
+├── public/               <-- DATA & PERSISTENCE
+│   ├── sessions/         <-- Stores Screenshots & Video evidence
+│   └── user_data/        <-- Browser profiles (Cookies/Persistence)
 │
-└── package.json          <-- Project Manifest
+├── .env                  <-- SECRETS (API Keys - Git Ignored)
+├── .gitignore            <-- Git Exclusion Rules
+└── package.json          <-- Backend Dependencies
