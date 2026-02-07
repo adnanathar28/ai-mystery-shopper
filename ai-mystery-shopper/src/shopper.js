@@ -19,6 +19,17 @@ class MysteryShopper {
 
     }
 
+    async enableThrottling(page) {
+        const client = await page.context().newCDPSession(page);
+        await client.send('Network.emulateNetworkConditions', {
+            offline: false,
+            downloadThroughput: 750 * 1024 / 8, // ~750 Kbps (Slow 3G)
+            uploadThroughput: 250 * 1024 / 8,   // ~250 Kbps
+            latency: 100                        // 100ms RTT
+        });
+        console.log("📡 Network throttled to Slow 3G");
+    }
+
 
   async runMission(url, goal) {
     const mobileDevice = devices['iPhone 13'];
@@ -96,11 +107,15 @@ class MysteryShopper {
     try {
       console.log(`[Shopper] Navigating to target: ${url}`);
       await page.goto(url, { waitUntil: 'domcontentloaded' });
+      await this.enableThrottling(page);
+
 
       while (!completed && stepCount < MAX_STEPS) { //the brain AI loop
         stepCount++;
         console.log(`\n--- Step ${stepCount} ---`);
         await page.waitForTimeout(2000);
+        const stepStart = Date.now();
+
 
         const screenshotBuffer = await page.screenshot({ // the eyes of the agent
           type: 'jpeg',
@@ -146,6 +161,9 @@ class MysteryShopper {
             `🩺 Diagnosis: ${aiDecision.diagnosis} [${aiDecision.severity}]`
           );
         }
+        
+        const duration = Date.now() - stepStart;
+
 
         this.frictionEngine.logEvent('ai_thought', {
           thought: aiDecision.reasoning,
@@ -153,7 +171,8 @@ class MysteryShopper {
           diagnosis: aiDecision.diagnosis,
           severity: aiDecision.severity,
           action:aiDecision.action,
-          url:page.url()
+          url:page.url(),
+          duration
         });
 
         steps.push({ step: stepCount, ...aiDecision });
@@ -211,6 +230,12 @@ IMPORTANT RULES:
 1. If you see the page clearly and there are no error messages, your diagnosis MUST be "Healthy".
 2. Do not report a "Backend Error" unless you see a 500 error or the page is totally blank.
 3. If you see a button that matches the goal, click it.
+
+NETWORK CONTEXT:
+You are operating on a slow mobile network (3G).
+Long loading times, spinners, and delayed UI responses are expected.
+Do NOT classify slowness alone as a backend or frontend error.
+Only report errors if the UI is broken, unresponsive, or blocks progress.
 
 RECENT HISTORY:
 ${JSON.stringify(history.slice(-2))}
