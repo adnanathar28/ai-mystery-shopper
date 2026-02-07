@@ -237,6 +237,8 @@ Long loading times, spinners, and delayed UI responses are expected.
 Do NOT classify slowness alone as a backend or frontend error.
 Only report errors if the UI is broken, unresponsive, or blocks progress.
 
+Identify the element you want to interact with and provide its center coordinates as percentages (0-100) of the width and height.
+
 RECENT HISTORY:
 ${JSON.stringify(history.slice(-2))}
 
@@ -247,6 +249,7 @@ Console Errors: ${JSON.stringify(logs.consoleErrors)}
 Return ONLY valid JSON in this exact format:
 {
   "action": "click" | "type" | "scroll" | "finish",
+  "location":{"x":number,"y":number},
   "selector": "what you see on screen",
   "text": "string (only if action is type)",
   "reasoning": "short explanation",
@@ -279,81 +282,41 @@ Return ONLY valid JSON in this exact format:
     }
   }
 
-  async executeAction(page, decision) {
-    const cleanSelector = decision.selector
-      .replace(/button|input|field|link|bar|icon/gi, '')
-      .trim();
-
-    const findInFrames = async (locatorFn) => {
-      let loc = locatorFn(page);
-      if (await loc.count() > 0 && (await loc.first().isVisible()))
-        return loc.first();
-
-      for (const frame of page.frames()) {
-        try {
-          loc = locatorFn(frame);
-          if (await loc.count() > 0 && (await loc.first().isVisible()))
-            return loc.first();
-        } catch {}
-      }
-      return null;
-    };
-
-    try {
-      if (decision.action === 'scroll') {
-        await page.mouse.wheel(0, 600);
-        await page.waitForTimeout(1000);
-        return;
-      }
-
-      if (decision.action === 'click') {
-        const strategies = [
-          (p) => p.getByRole('button', { name: cleanSelector, exact: false }),
-          (p) => p.getByRole('link', { name: cleanSelector, exact: false }),
-          (p) => p.getByText(decision.selector, { exact: true }),
-          (p) => p.locator(`[aria-label*="${cleanSelector}" i]`),
-          (p) => p.getByText(cleanSelector, { exact: false }),
-          (p) => p.locator(`img[alt*="${cleanSelector}" i]`),
-        ];
-
-        for (const strat of strategies) {
-          const el = await findInFrames(strat);
-          if (el) {
-            await el.click({ timeout: 1500 });
-            return;
-          }
+    async executeAction(page, decision) {
+      try {
+        if (decision.action === 'scroll') {
+          await page.mouse.wheel(0, 600);
+          return;
         }
 
-        throw new Error(`Element not found: "${decision.selector}"`);
-      }
+        if (decision.action === 'finish') return;
 
-      if (decision.action === 'type') {
-        const strategies = [
-          (p) => p.getByPlaceholder(cleanSelector, { exact: false }),
-          (p) => p.getByLabel(cleanSelector, { exact: false }),
-          (p) => p.getByRole('textbox', { name: cleanSelector, exact: false }),
-          (p) => p.locator('input[type="search"]'),
-          (p) => p.locator('input').first(),
-        ];
+        // --- VISUAL COORDINATE LOGIC ---
+        if (!decision.location) throw new Error("No coordinates provided");
 
-        for (const strat of strategies) {
-          const el = await findInFrames(strat);
-          if (el) {
-            await el.fill(decision.text);
-            await page.keyboard.press('Enter');
-            return;
-          }
+        const viewport = page.viewportSize();
+        const x = Math.round((decision.location.x / 100) * viewport.width);
+        const y = Math.round((decision.location.y / 100) * viewport.height);
+
+        console.log(`   👉 Visual Action: ${decision.action} at (${x}, ${y})`);
+
+        if (decision.action === 'click') {
+          await page.mouse.click(x, y);
         }
 
-        throw new Error(`Input field not found: "${decision.selector}"`);
+        if (decision.action === 'type') {
+          await page.mouse.click(x, y); // Focus the field first
+          await page.keyboard.type(decision.text || '', { delay: 60 });
+          await page.keyboard.press('Enter');
+        }
+
+        await page.waitForTimeout(1500);
+      } catch (e) {
+        console.log(`   -> [Action Failed] ${e.message}`);
+        this.frictionEngine.logEvent('ui_error', { target: decision.selector });
       }
-    } catch (e) {
-      console.log(`   -> [Action Failed] ${e.message}`);
-      this.frictionEngine.logEvent('ui_error', {
-        target: decision.selector,
-      });
     }
-  }
 }
+
 
 module.exports = MysteryShopper;
