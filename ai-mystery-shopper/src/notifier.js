@@ -20,6 +20,7 @@ class Notifier {
                     title: `${statusEmoji}: ${targetUrl}`, //color reflects severity and title tells us more details
                     fields: [ //most imp
                         { title: "Goal", value: goal, short: false }, //what goal was user trying
+
                         { title: "Confusion Score", value: `${report.confusionScore}/100`, short: true }, //how bad was it
                         { title: "Top Diagnosis", value: report.topDiagnosis, short: true }, //ai value:why did it fail
                         { title: "Steps Taken", value: report.totalEvents.toString(), short: true }, //did the user struggle or fail immidieatly

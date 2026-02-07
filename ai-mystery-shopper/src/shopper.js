@@ -5,6 +5,8 @@ const FrictionEngine = require('./frictionEngine');
 const fs = require('fs');
 const path = require('path');
 const Notifier = require('./notifier');
+const aiClient = require('./aiClient'); // Import our new wrapper
+
 
 const USER_DATA_DIR = path.join(__dirname, '../public/user_data'); //keeps cookies, avoids fresh browser every run, makes bot more human
 
@@ -260,24 +262,11 @@ Return ONLY valid JSON in this exact format:
 `;
 
     try {
-      const result = await this.model.generateContent([
-        { text: prompt },
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: base64Image,
-          },
-        },
-      ]);
-
-      const cleaned = result.response
-        .text()
-        .replace(/```json|```/g, '')
-        .trim();
-
+      const textResponse = await aiClient.analyze(prompt, base64Image);
+      const cleaned = textResponse.replace(/```json|```/g, '').trim();
       return JSON.parse(cleaned);
     } catch (e) {
-      console.error('Gemini analysis failed:', e.message);
+      console.error('AI analysis failed:', e.message);
       return null;
     }
   }
