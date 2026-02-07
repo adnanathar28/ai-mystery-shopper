@@ -223,7 +223,8 @@ class MysteryShopper {
 
   async analyzePage(base64Image, goal, history, logs) { //Sends ss to gemini and asks, if you were a confused human, what wd you do next and why?
     const prompt = `
-You are an AI Mystery Shopper on a mobile device. Look at the screen.
+You are a specialized Mobile QA Agent. 
+DEVICE: iPhone 13 (Viewport: 390x844).
 
 GOAL:
 "${goal}"
@@ -232,6 +233,10 @@ IMPORTANT RULES:
 1. If you see the page clearly and there are no error messages, your diagnosis MUST be "Healthy".
 2. Do not report a "Backend Error" unless you see a 500 error or the page is totally blank.
 3. If you see a button that matches the goal, click it.
+4. Your screen is only 844 units tall.
+5. Coordinates MUST be percentages (0-100). 
+6. If you provide a 'y' greater than 100, the action will FAIL.
+7. Most buttons on mobile are in the center-middle (y: 30-70).
 
 NETWORK CONTEXT:
 You are operating on a slow mobile network (3G).
@@ -239,9 +244,11 @@ Long loading times, spinners, and delayed UI responses are expected.
 Do NOT classify slowness alone as a backend or frontend error.
 Only report errors if the UI is broken, unresponsive, or blocks progress.
 
-Identify the element you want to interact with and provide its center coordinates as percentages (0-100) of the width and height.
-
+CURRENT STATE:
+Look at the screenshot. Identify the EXACT center of the element.
+If a previous action at a specific coordinate failed (check history), DO NOT use those coordinates again. Move slightly or re-evaluate.
 RECENT HISTORY:
+
 ${JSON.stringify(history.slice(-2))}
 
 TECHNICAL CONTEXT:
@@ -273,38 +280,75 @@ Return ONLY valid JSON in this exact format:
 
     async executeAction(page, decision) {
       try {
-        if (decision.action === 'scroll') {
-          await page.mouse.wheel(0, 600);
-          return;
-        }
-
-        if (decision.action === 'finish') return;
-
-        // --- VISUAL COORDINATE LOGIC ---
-        if (!decision.location) throw new Error("No coordinates provided");
+        // --- SAFETY: Clamp coordinates to avoid edge / offscreen taps ---
+        const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
+        decision.location.x = clamp(decision.location.x, 5, 95);
+        decision.location.y = clamp(decision.location.y, 5, 95);
 
         const viewport = page.viewportSize();
         const x = Math.round((decision.location.x / 100) * viewport.width);
         const y = Math.round((decision.location.y / 100) * viewport.height);
 
-        console.log(`   👉 Visual Action: ${decision.action} at (${x}, ${y})`);
+        // --- SCROLL ACTION ---
+        if (decision.action === 'scroll') {
+          await page.mouse.wheel(0, 400);
+          await page.waitForTimeout(1000);
+          return;
+        }
 
+        // --- MOVE FIRST (human-like, avoids mis-clicks) ---
+        await page.mouse.move(x, y);
+        await page.waitForTimeout(300);
+
+        // --- CLICK ACTION ---
         if (decision.action === 'click') {
-          await page.mouse.click(x, y);
+          await page.mouse.click(x, y, { delay: 100 });
+          await page.waitForTimeout(1500);
+          return;
         }
 
+        // --- TYPE ACTION ---
         if (decision.action === 'type') {
-          await page.mouse.click(x, y); // Focus the field first
-          await page.keyboard.type(decision.text || '', { delay: 60 });
+          // 1. Focus field explicitly
+          await page.mouse.click(x, y, { clickCount: 3 });
+          await page.waitForTimeout(300);
+
+          // 2. Clear existing content
+          await page.keyboard.press('Backspace');
+          await page.waitForTimeout(200);
+
+          // 3. Type text slowly (mobile realism)
+          await page.keyboard.type(decision.text || '', { delay: 100 });
+
+          // 4. Close keyboard / submit
           await page.keyboard.press('Enter');
+          await page.waitForTimeout(1500);
+
+          // --- POST-TYPE VERIFICATION (CRITICAL) ---
+          const didTextRegister = await page.evaluate(() => {
+            const el = document.activeElement;
+            return el && typeof el.value === 'string' && el.value.length > 0;
+          });
+
+          if (!didTextRegister) {
+            throw new Error('Typed text did not register in input field');
+          }
+
+          return;
         }
 
-        await page.waitForTimeout(1500);
       } catch (e) {
         console.log(`   -> [Action Failed] ${e.message}`);
-        this.frictionEngine.logEvent('ui_error', { target: decision.selector });
+
+        // Log UI failure for friction analysis
+        this.frictionEngine.logEvent('ui_error', {
+          reason: e.message,
+          attemptedAction: decision.action,
+          selector: decision.selector
+        });
       }
     }
+
 }
 
 
