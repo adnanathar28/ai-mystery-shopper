@@ -152,6 +152,8 @@ class MysteryShopper {
           aiFrustrationLevel: aiDecision.frustration_level,
           diagnosis: aiDecision.diagnosis,
           severity: aiDecision.severity,
+          action:aiDecision.action,
+          url:page.url()
         });
 
         steps.push({ step: stepCount, ...aiDecision });
