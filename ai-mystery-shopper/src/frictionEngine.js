@@ -83,7 +83,7 @@ class FrictionEngine {
 
         let finalScore = rawScore;
 
-        if (goalCompleted) {
+        if (goalCompleted && rawScore<100) {
             /** 
              * DYNAMIC SUCCESS CAP
              * If the journey took more than 7 steps, it wasn't "smooth" even if it finished.
