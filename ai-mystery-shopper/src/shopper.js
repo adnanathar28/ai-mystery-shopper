@@ -278,76 +278,71 @@ Return ONLY valid JSON in this exact format:
     }
   }
 
-    async executeAction(page, decision) {
-      try {
-        // --- SAFETY: Clamp coordinates to avoid edge / offscreen taps ---
-        const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
-        decision.location.x = clamp(decision.location.x, 5, 95);
-        decision.location.y = clamp(decision.location.y, 5, 95);
-
+      async executeAction(page, decision) {
         const viewport = page.viewportSize();
         const x = Math.round((decision.location.x / 100) * viewport.width);
         const y = Math.round((decision.location.y / 100) * viewport.height);
 
-        // --- SCROLL ACTION ---
-        if (decision.action === 'scroll') {
-          await page.mouse.wheel(0, 400);
-          await page.waitForTimeout(1000);
-          return;
-        }
+        try {
+          // 1. Visual Red Dot (Still the best part of the demo)
+          await page.evaluate(({ x, y }) => {
+            const dot = document.createElement('div');
+            dot.style.cssText = `position:fixed; left:${x-5}px; top:${y-5}px; width:10px; height:10px; background:red; border-radius:50%; z-index:1e6; pointer-events:none;`;
+            document.body.appendChild(dot);
+            setTimeout(() => dot.remove(), 800);
+          }, { x, y });
 
-        // --- MOVE FIRST (human-like, avoids mis-clicks) ---
-        await page.mouse.move(x, y);
-        await page.waitForTimeout(300);
-
-        // --- CLICK ACTION ---
-        if (decision.action === 'click') {
-          await page.mouse.click(x, y, { delay: 100 });
-          await page.waitForTimeout(1500);
-          return;
-        }
-
-        // --- TYPE ACTION ---
-        if (decision.action === 'type') {
-          // 1. Focus field explicitly
-          await page.mouse.click(x, y, { clickCount: 3 });
-          await page.waitForTimeout(300);
-
-          // 2. Clear existing content
-          await page.keyboard.press('Backspace');
-          await page.waitForTimeout(200);
-
-          // 3. Type text slowly (mobile realism)
-          await page.keyboard.type(decision.text || '', { delay: 100 });
-
-          // 4. Close keyboard / submit
-          await page.keyboard.press('Enter');
-          await page.waitForTimeout(1500);
-
-          // --- POST-TYPE VERIFICATION (CRITICAL) ---
-          const didTextRegister = await page.evaluate(() => {
-            const el = document.activeElement;
-            return el && typeof el.value === 'string' && el.value.length > 0;
-          });
-
-          if (!didTextRegister) {
-            throw new Error('Typed text did not register in input field');
+          if (decision.action === 'scroll') {
+            await page.mouse.wheel(0, 400);
+            return;
           }
 
-          return;
+          // 2. THE UNIVERSAL BRIDGE: Grab the element at the AI's coordinates
+          // This works on ANY device and ANY website.
+          const elementHandle = await page.evaluateHandle(({ x, y }) => {
+            let el = document.elementFromPoint(x, y);
+            // If we hit a label or a wrapper, try to find the actual input/button inside
+            if (el && !['INPUT', 'BUTTON', 'A', 'TEXTAREA'].includes(el.tagName)) {
+              el = el.querySelector('input, button, a, textarea') || el;
+            }
+            return el;
+          }, { x, y });
+
+          const element = elementHandle.asElement();
+
+          if (decision.action === 'click') {
+            if (element) {
+              await element.click({ force: true }); // Force bypasses mobile "visibility" issues
+            } else {
+              await page.mouse.click(x, y);
+            }
+          }
+
+          if (decision.action === 'type') {
+            if (element) {
+              // Ensure focus is solid
+              await element.focus();
+              await element.click(); 
+              
+              // Use fill for reliability across devices, or type for realism
+              await element.fill(''); // Clear
+              await element.fill(decision.text); 
+            } else {
+              // Fallback for strange layouts
+              await page.mouse.click(x, y);
+              await page.keyboard.type(decision.text, { delay: 50 });
+            }
+            await page.keyboard.press('Enter');
+          }
+
+          await page.waitForTimeout(1500);
+
+        } catch (e) {
+          console.log(`   -> [Universal Action Failed] ${e.message}`);
+          this.frictionEngine.logEvent('ui_error', { reason: e.message });
         }
-
-      } catch (e) {
-        console.log(`   -> [Action Failed] ${e.message}`);
-
-        // Log UI failure for friction analysis
-        this.frictionEngine.logEvent('ui_error', {
-          reason: e.message,
-          attemptedAction: decision.action,
-          selector: decision.selector
-        });
       }
-    }
+    
 
 }
 
