@@ -1,9 +1,10 @@
 // src/index.js
+require('dotenv').config(); // MUST BE LINE 1
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const MysteryShopper = require('./shopper');
-require('dotenv').config();
 
 // console.log("GEMINI_API_KEY value:", process.env.GEMINI_API_KEY);
 // console.log("GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);

@@ -8,7 +8,7 @@ class AIClient {
         
         if (this.provider === 'gemini') {
             const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-            this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            this.model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         } else {
             this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         }
