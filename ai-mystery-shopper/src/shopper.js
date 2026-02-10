@@ -388,6 +388,8 @@ UNIVERSAL WEB LOGIC:
 - **Toggle Rule**: If a button text flips state (Add->Remove), the action is COMPLETE.
 - **Contextual Attention**: If Navigating, prioritize Headers/Menus. If Searching, prioritize Content/Scrolling.
 
+DEAD-END RULE: If you have scrolled the entire length of the page (top to bottom) and the item is not found, do NOT keep scrolling. Change your action to finish, set your diagnosis to Stuck, and explain in reasoning that the item is missing from the catalog.
+
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
 
@@ -419,10 +421,11 @@ RESPONSE FORMAT (JSON):
         }
     }
 
-    async executeAction(page, decision) {
+        async executeAction(page, decision) {
         if (decision.action === 'scroll') {
             console.log("   📜 Scrolling page...");
             await page.keyboard.press('PageDown');
+            await page.waitForTimeout(1000); // Small wait for scroll to settle
             return;
         }
         
@@ -434,18 +437,20 @@ RESPONSE FORMAT (JSON):
             
             if (await locator.count() === 0) throw new Error(`Element #${decision.elementId} not found`);
 
+            // Visual feedback: Green outline on what the AI is about to touch
             await page.evaluate((sel) => {
                 const el = document.querySelector(sel);
                 if (el) el.style.outline = '4px solid #00ff00';
             }, selector);
 
-            // Clean badges before interaction
+            // Clean red badges before interaction so they don't block the click
             await page.evaluate(() => {
                 document.querySelectorAll('.ai-marker').forEach(el => el.remove());
             });
 
             if (decision.action === 'click') {
                 await locator.click({ timeout: 5000 });
+                console.log(`   [Action] Clicked element ID: ${decision.elementId}`);
             }
             else if (decision.action === 'type') {
                 await locator.fill(decision.text || '');
@@ -453,8 +458,18 @@ RESPONSE FORMAT (JSON):
                 if (tagName.toLowerCase() === 'input') {
                     await page.keyboard.press('Enter');
                 }
+                console.log(`   [Action] Typed text into element ID: ${decision.elementId}`);
+            }
+
+            // --- THE FIX: WAIT AFTER THE ACTION ---
+            // This ensures the next screenshot shows the RESULT of the click
+            if (decision.action === 'click') {
+                await page.waitForTimeout(3000); 
+            } else {
+                await page.waitForTimeout(1500);
             }
         }
+    
     }
 }
 module.exports = MysteryShopper;

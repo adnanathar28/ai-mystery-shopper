@@ -66,13 +66,15 @@ function App() {
           {/* SCORE CARD */}
           <div className="score-card">
             <h2>Confusion Score</h2>
-            <div className={`score ${report.confusionScore > 50 ? 'bad' : 'good'}`}>
+            <div className={`score ${report.confusionScore > 60 ? 'bad' : report.confusionScore > 30 ? 'warning' : 'good'}`}>
               {report.confusionScore}/100
             </div>
             <div className="status">
-               {report.confusionScore > 50 
-                 ? <><AlertCircle color="#ff6b6b"/> High Friction Detected</> 
-                 : <><CheckCircle color="#51cf66"/> Smooth Experience</>}
+              {report.confusionScore > 60 
+                ? <><AlertCircle color="#ff6b6b"/> Critical Friction</> 
+                : report.confusionScore > 30
+                ? <><AlertCircle color="#fcc419"/> Potential UX Issue</>
+                : <><CheckCircle color="#51cf66"/> Smooth Experience</>}
             </div>
             {report.topDiagnosis !== "None" && (
                 <div className="diagnosis-badge">
@@ -105,7 +107,7 @@ function App() {
                 <div className="step-content">
                   <p className="thought">"{step.details.thought}"</p>
                   <div className="meta">
-                    <span className="frustration">Frustration: {step.details.aiFrustrationLevel}/10</span>
+                    <span className="frustration">{step.details.aiFrustrationLevel <= 2 ? 'Status: Smooth' : `Frustration: ${step.details.aiFrustrationLevel}/10`}</span>
                     {step.details.diagnosis && step.details.diagnosis !== "Healthy" && (
                          <span className="frustration" style={{background: '#7f1d1d', color: '#fecaca', marginLeft: '10px'}}>
                             {step.details.diagnosis}

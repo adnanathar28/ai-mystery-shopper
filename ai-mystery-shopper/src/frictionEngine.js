@@ -31,6 +31,7 @@ class FrictionEngine {
 
       /* 2. Diagnosis & Severity penalties */
       if (details.diagnosis === 'Backend Error') score += 20;
+      if (details.diagnosis === 'Stuck') score += 15;
 
       if (details.severity === 'High') score += 25;
 
@@ -78,7 +79,7 @@ class FrictionEngine {
 
     /* 7. Excessive scrolling without progress */
     if (scrollCount >= 6 && !urlChanged) {
-      score += 15;
+      score += 20;
     }
 
     /* 8. Hard stop on critical failure */
@@ -87,27 +88,35 @@ class FrictionEngine {
     return Math.min(Math.max(score, 0), 100);
   }
 
-    getReport() {
+getReport() {
     const rawScore = this.calculateScore();
-    const goalCompleted = this.events.some(e => e.details?.action === 'finish');
+    
+    // CHANGE 1: A "Real Success" only counts if the action is finish AND the diagnosis is Healthy
+    const trulySucceeded = this.events.some(
+      e => e.details?.action === 'finish' && e.details?.diagnosis === 'Healthy'
+    );
+    
+    // CHANGE 2: Check if the AI officially gave up
+    const gaveUp = this.events.some(e => e.details?.diagnosis === 'Stuck');
 
     let finalScore = rawScore;
 
-    if (goalCompleted) {
+    if (trulySucceeded) {
       const totalFrustration = this.events.reduce((acc, e) => acc + (e.details?.aiFrustrationLevel || 0), 0);
       const avgFrustration = totalFrustration / this.events.length;
-      const efficiencyPenalty = this.events.length > 7 ? (this.events.length - 7) * 5 : 0;
+      const stepAllowance = 15;
+      const efficiencyPenalty = this.events.length > stepAllowance ? (this.events.length - stepAllowance) * 5 : 0;
 
       if (avgFrustration < 2 && this.events.length <= 7) {
-        // CASE 1: Truly Smooth (Low frustration, low steps)
         finalScore = Math.min(rawScore, 10);
       } else if (avgFrustration < 2) {
-        // CASE 2: Clean but Long (Low frustration, but many steps)
         finalScore = Math.min(rawScore, 20 + efficiencyPenalty);
       } else {
-        // CASE 3: Struggling Success (Higher frustration)
         finalScore = Math.max(rawScore * 0.5, 25 + efficiencyPenalty);
       }
+    } else if (gaveUp) {
+      // CHANGE 3: If they gave up, the score should be at least 70 (Critical/Warning)
+      finalScore = Math.max(rawScore, 70);
     }
 
     // --- TOP DIAGNOSIS LOGIC ---
@@ -129,8 +138,8 @@ class FrictionEngine {
 
     return {
       totalEvents: this.events.length,
-      confusionScore: Math.round(Math.min(finalScore, 100)), // Ensure max is 100
-      topDiagnosis: topDiagnosis, // Use the variable we just calculated!
+      confusionScore: Math.round(Math.min(finalScore, 100)),
+      topDiagnosis: topDiagnosis,
       log: this.events
     };
   }
