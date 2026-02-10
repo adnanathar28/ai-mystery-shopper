@@ -1,350 +1,433 @@
 // src/shopper.js
 const { chromium, devices } = require('playwright');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const FrictionEngine = require('./frictionEngine');
 const fs = require('fs');
 const path = require('path');
 const Notifier = require('./notifier');
-const aiClient = require('./aiClient'); // Import our new wrapper
+const aiClient = require('./aiClient');
 
-
-const USER_DATA_DIR = path.join(__dirname, '../public/user_data'); //keeps cookies, avoids fresh browser every run, makes bot more human
+const USER_DATA_DIR = path.join(__dirname, '../public/user_data');
 
 class MysteryShopper {
-    constructor(apiKey) {
-    this.gemini = new GoogleGenerativeAI(apiKey);
-    this.model = this.gemini.getGenerativeModel({
-        model: 'gemini-2.5-flash',
-    });
-    this.frictionEngine = new FrictionEngine();
-    this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL); // Add this
-
+    constructor() {
+        this.frictionEngine = new FrictionEngine();
+        this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL);
     }
 
     async enableThrottling(page) {
         const client = await page.context().newCDPSession(page);
         await client.send('Network.emulateNetworkConditions', {
             offline: false,
-            downloadThroughput: 750 * 1024 / 8, // ~750 Kbps (Slow 3G)
-            uploadThroughput: 250 * 1024 / 8,   // ~250 Kbps
-            latency: 100                        // 100ms RTT
+            downloadThroughput: 750 * 1024 / 8,
+            uploadThroughput: 250 * 1024 / 8,
+            latency: 100
         });
-        console.log("📡 Network throttled to Slow 3G");
+        console.log("📡 Network throttled to Slow 3G (Universal Stress Test)");
     }
 
-
-  async runMission(url, goal) {
-    const mobileDevice = devices['iPhone 13'];
-    const timestamp = Date.now();
-    const sessionDirName = `session-${timestamp}`;
-    const sessionPath = path.join(
-      __dirname,
-      '../public/sessions',
-      sessionDirName
-    );
-
-    fs.mkdirSync(sessionPath, { recursive: true }); //creates folder
-
-    console.log(
-      `[Shopper] Launching Universal Mobile Agent (${mobileDevice.userAgent})`
-    );
-
-    const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
-      headless: false, //so we can see
-      channel: 'chrome',
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-        '--disable-infobars', //makes but look more human
-        '--disable-features=IsolateOrigins,site-per-process,PasswordLeakDetection,SafeBrowsingProtectionLevelToEnhanced,ExtensionsToolbarMenu',
-        '--disable-save-password-bubble',
-        '--deny-permission-prompts',
-        '--disable-popup-blocking',
-        '--disable-password-manager-reauthentication',
-        '--password-store=basic',
-      ],
-      ...mobileDevice,
-      recordVideo: {
-        dir: sessionPath,
-        size: { width: 390, height: 844 }, //every run gets video evidence
-      },
-    });
-
-    const page =
-      context.pages().length > 0
-        ? context.pages()[0]
-        : await context.newPage(); //gets the pages
-
-    const sessionLogs = { errors: [], console: [] }; //tracks network failures etc
-
-    page.on('response', (response) => { //network error listener
-      const resUrl = response.url();
-      if (
-        resUrl.match(
-          /backtrace|google-analytics|segment|doubleclick|facebook|newrelic/
-        )
-      )
-        return;
-
-      if (response.status() >= 400) { //if backend breaks it is now logged, this feeds diagnostic intelligence
-        sessionLogs.errors.push({
-          status: response.status(),
-          url: resUrl,
-        });
-      }
-    });
-
-    page.on('console', (msg) => { //console error listener, if frontend crashes we catch it
-      if (msg.type() === 'error') {
-        sessionLogs.console.push(msg.text());
-      }
-    });
-
-    const steps = [];
-    let completed = false;
-    let stepCount = 0;
-    const MAX_STEPS = 15;
-    let lastScreenshot = '';
-
-    try {
-      console.log(`[Shopper] Navigating to target: ${url}`);
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-      await this.enableThrottling(page);
-
-
-      while (!completed && stepCount < MAX_STEPS) { //the brain AI loop
-        stepCount++;
-        console.log(`\n--- Step ${stepCount} ---`);
-        await page.waitForTimeout(2000);
-        const stepStart = Date.now();
-
-
-        const screenshotBuffer = await page.screenshot({ // the eyes of the agent
-          type: 'jpeg',
-          quality: 60,
-        });
-        const base64Image = screenshotBuffer.toString('base64');
-
-        fs.writeFileSync(
-          path.join(sessionPath, `step-${stepCount}.jpg`),
-          screenshotBuffer
-        );
-
-        if (base64Image === lastScreenshot) { //detects stuck state
-          console.log('⚠️ Visual Warning: Viewport static since last step.');
-        }
-        lastScreenshot = base64Image;
-
-        const recentLogs = {
-          networkErrors: sessionLogs.errors.slice(-3),
-          consoleErrors: sessionLogs.console.slice(-3),
-        };
-
-        const aiDecision = await this.analyzePage( //the ai analysis, most important. Sends screenshot, goal, history, errors to gemini vision.
-          base64Image,
-          goal,
-          steps,
-          recentLogs
-        );
-
-        if (!aiDecision) {
-          console.log('⚠️ AI glitch. Retrying step...');
-          stepCount--;
-          continue;
-        }
-
-        console.log(`🧠 Thought: "${aiDecision.reasoning}"`);
-        console.log(
-          `👉 Action: ${aiDecision.action} on "${aiDecision.selector}"`
-        );
-
-        if (aiDecision.diagnosis !== 'Healthy') {
-          console.log(
-            `🩺 Diagnosis: ${aiDecision.diagnosis} [${aiDecision.severity}]`
-          );
-        }
-        
-        const duration = Date.now() - stepStart;
-
-
-        this.frictionEngine.logEvent('ai_thought', {
-          thought: aiDecision.reasoning,
-          aiFrustrationLevel: aiDecision.frustration_level,
-          diagnosis: aiDecision.diagnosis,
-          severity: aiDecision.severity,
-          action:aiDecision.action,
-          url:page.url(),
-          duration
-        });
-
-        steps.push({ step: stepCount, ...aiDecision });
-
-        if (aiDecision.action === 'finish') {
-          console.log('[Shopper] Goal Achieved.');
-          completed = true;
-          break;
-        }
-
-        if (
-          aiDecision.diagnosis === 'CRITICAL_FAILURE' ||
-          aiDecision.severity === 'Critical'
-        ) {
-          console.log('🚨 ABORT: Critical Failure Detected');
-          break;
-        }
-
-        await this.executeAction(page, aiDecision); //playwright clicks types scrolls, using fuzzy visual selectors not IDs
-      }
-    } catch (error) {
-      console.error('[Shopper] System Error:', error);
-      this.frictionEngine.logEvent('error', { message: error.message });
-    } finally {
-      await context.close();
-
-      const videoFiles = fs
-        .readdirSync(sessionPath)
-        .filter((f) => f.endsWith('.webm'));
-
-      if (videoFiles.length > 0) {
-        fs.renameSync(
-          path.join(sessionPath, videoFiles[0]),
-          path.join(sessionPath, 'recording.webm')
-        );
-        console.log('[Evidence] Video saved.');
-      }
-    }
-
-    const report = this.frictionEngine.getReport();
-    report.videoUrl = `/sessions/${sessionDirName}/recording.webm`;
-    await this.notifier.sendAlert(report, goal, url); //shopper finishes its mission and everything is scored
-
-    return report;
-  }
-
-  async analyzePage(base64Image, goal, history, logs) { //Sends ss to gemini and asks, if you were a confused human, what wd you do next and why?
-    const prompt = `
-You are a specialized Mobile QA Agent. 
-DEVICE: iPhone 13 (Viewport: 390x844).
-
-GOAL:
-"${goal}"
-
-IMPORTANT RULES:
-1. If you see the page clearly and there are no error messages, your diagnosis MUST be "Healthy".
-2. Do not report a "Backend Error" unless you see a 500 error or the page is totally blank.
-3. If you see a button that matches the goal, click it.
-4. Your screen is only 844 units tall.
-5. Coordinates MUST be percentages (0-100). 
-6. If you provide a 'y' greater than 100, the action will FAIL.
-7. Most buttons on mobile are in the center-middle (y: 30-70).
-
-NETWORK CONTEXT:
-You are operating on a slow mobile network (3G).
-Long loading times, spinners, and delayed UI responses are expected.
-Do NOT classify slowness alone as a backend or frontend error.
-Only report errors if the UI is broken, unresponsive, or blocks progress.
-
-CURRENT STATE:
-Look at the screenshot. Identify the EXACT center of the element.
-If a previous action at a specific coordinate failed (check history), DO NOT use those coordinates again. Move slightly or re-evaluate.
-RECENT HISTORY:
-
-${JSON.stringify(history.slice(-2))}
-
-TECHNICAL CONTEXT:
-Network Errors: ${JSON.stringify(logs.networkErrors)} 
-Console Errors: ${JSON.stringify(logs.consoleErrors)}
-
-Return ONLY valid JSON in this exact format:
-{
-  "action": "click" | "type" | "scroll" | "finish",
-  "location":{"x":number,"y":number},
-  "selector": "what you see on screen",
-  "text": "string (only if action is type)",
-  "reasoning": "short explanation",
-  "frustration_level": 0-10,
-  "diagnosis": "Healthy" | "Backend Error" | "Frontend Crash" | "UX Confusion" | "CRITICAL_FAILURE",
-  "severity": "None" | "Low" | "Medium" | "High" | "Critical"
-}
-`;
-
-    try {
-      const textResponse = await aiClient.analyze(prompt, base64Image);
-      const cleaned = textResponse.replace(/```json|```/g, '').trim();
-      return JSON.parse(cleaned);
-    } catch (e) {
-      console.error('AI analysis failed:', e.message);
-      return null;
-    }
-  }
-
-      async executeAction(page, decision) {
-        const viewport = page.viewportSize();
-        const x = Math.round((decision.location.x / 100) * viewport.width);
-        const y = Math.round((decision.location.y / 100) * viewport.height);
+    /**
+     * NUCLEAR OPTION: Manually writes Chrome Preferences to disable
+     * the Password Manager and Security Popups before launch.
+     */
+    preloadPreferences() {
+        const defaultDir = path.join(USER_DATA_DIR, 'Default');
+        const prefsFile = path.join(defaultDir, 'Preferences');
 
         try {
-          // 1. Visual Red Dot (Still the best part of the demo)
-          await page.evaluate(({ x, y }) => {
-            const dot = document.createElement('div');
-            dot.style.cssText = `position:fixed; left:${x-5}px; top:${y-5}px; width:10px; height:10px; background:red; border-radius:50%; z-index:1e6; pointer-events:none;`;
-            document.body.appendChild(dot);
-            setTimeout(() => dot.remove(), 800);
-          }, { x, y });
-
-          if (decision.action === 'scroll') {
-            await page.mouse.wheel(0, 400);
-            return;
-          }
-
-          // 2. THE UNIVERSAL BRIDGE: Grab the element at the AI's coordinates
-          // This works on ANY device and ANY website.
-          const elementHandle = await page.evaluateHandle(({ x, y }) => {
-            let el = document.elementFromPoint(x, y);
-            // If we hit a label or a wrapper, try to find the actual input/button inside
-            if (el && !['INPUT', 'BUTTON', 'A', 'TEXTAREA'].includes(el.tagName)) {
-              el = el.querySelector('input, button, a, textarea') || el;
+            // Ensure the directory exists
+            if (!fs.existsSync(defaultDir)) {
+                fs.mkdirSync(defaultDir, { recursive: true });
             }
-            return el;
-          }, { x, y });
 
-          const element = elementHandle.asElement();
-
-          if (decision.action === 'click') {
-            if (element) {
-              await element.click({ force: true }); // Force bypasses mobile "visibility" issues
-            } else {
-              await page.mouse.click(x, y);
+            let prefs = {};
+            if (fs.existsSync(prefsFile)) {
+                try {
+                    prefs = JSON.parse(fs.readFileSync(prefsFile, 'utf8'));
+                } catch (e) { console.error("Corrupt prefs, resetting."); }
             }
-          }
 
-          if (decision.action === 'type') {
-            if (element) {
-              // Ensure focus is solid
-              await element.focus();
-              await element.click(); 
-              
-              // Use fill for reliability across devices, or type for realism
-              await element.fill(''); // Clear
-              await element.fill(decision.text); 
-            } else {
-              // Fallback for strange layouts
-              await page.mouse.click(x, y);
-              await page.keyboard.type(decision.text, { delay: 50 });
-            }
-            await page.keyboard.press('Enter');
-          }
+            // --- THE CONFIGURATION THAT KILLS THE POPUPS ---
+            const hardPrefs = {
+                credentials_enable_service: false, // Disables "Save Password" bubble
+                profile: {
+                    password_manager_enabled: false, // Disables the manager logic
+                    password_manager_leak_detection: false, // Disables "Data Breach" warning
+                },
+                safebrowsing: {
+                    enabled: false, // Disables some security popups
+                    enhanced: false
+                },
+                autofill: {
+                    profile_enabled: false, // Disables "Save Address"
+                    credit_card_enabled: false // Disables "Save Card"
+                }
+            };
 
-          await page.waitForTimeout(1500);
+            // Deep merge helper (simple version)
+            const merge = (target, source) => {
+                for (const key of Object.keys(source)) {
+                    if (source[key] instanceof Object && key in target) {
+                        Object.assign(source[key], merge(target[key], source[key]));
+                    }
+                }
+                Object.assign(target || {}, source);
+                return target;
+            };
 
+            prefs = merge(prefs, hardPrefs);
+            
+            fs.writeFileSync(prefsFile, JSON.stringify(prefs));
+            console.log("🛡️  Chrome Preferences injected: Password Manager DISABLED.");
         } catch (e) {
-          console.log(`   -> [Universal Action Failed] ${e.message}`);
-          this.frictionEngine.logEvent('ui_error', { reason: e.message });
+            console.error("⚠️ Failed to inject preferences:", e.message);
         }
-      }
-    
+    }
 
+    async generateMissionPlan(goal) {
+        console.log("🤔 Generating strategic plan...");
+        const prompt = `
+        You are an expert QA Strategist.
+        The user wants to: "${goal}".
+        Break this down into 3-5 abstract, high-level milestones.
+        Example: ["Login", "Find Product", "Add to Cart", "Navigate to Cart", "Checkout"]
+        RETURN ONLY A RAW JSON ARRAY OF STRINGS.
+        `;
+        
+        try {
+            const result = await aiClient.analyze(prompt, null); 
+            const cleanResult = result.replace(/```json|```/g, '').trim();
+            const milestones = JSON.parse(cleanResult);
+            console.log("🗺️  Mission Plan:", milestones);
+            return milestones;
+        } catch (e) {
+            console.error("Plan generation failed, using default.");
+            return ["Explore page", "Interact with relevant element", "Verify result"];
+        }
+    }
+
+    async runMission(url, goal) {
+        const mobileDevice = devices['iPhone 13'];
+        const timestamp = Date.now();
+        const sessionDirName = `session-${timestamp}`;
+        const sessionPath = path.join(__dirname, '../public/sessions', sessionDirName);
+
+        fs.mkdirSync(sessionPath, { recursive: true });
+
+        // 1. INJECT PREFERENCES BEFORE BROWSER START
+        this.preloadPreferences();
+
+        const milestones = await this.generateMissionPlan(goal);
+        console.log(`[Shopper] Launching Agent...`);
+
+        const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+            headless: false,
+            channel: 'chrome',
+            // Stealth Mode args
+            ignoreDefaultArgs: ['--enable-automation'], 
+            args: [
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+                '--disable-infobars',
+                '--start-maximized',
+                '--no-first-run',
+                '--disable-session-crashed-bubble',
+                '--disable-popup-blocking',
+                // Redundant flags just to be safe
+                '--disable-save-password-bubble',
+                '--password-store=basic',
+                '--deny-permission-prompts',
+                '--disable-notifications'
+            ],
+            ...mobileDevice,
+            recordVideo: { dir: sessionPath, size: { width: 390, height: 844 } },
+        });
+
+        const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+        
+        let lastStepDescription = "Start of mission";
+        let lastActionTaken = "Navigated to URL";
+        let lastActionResult = "Success"; 
+        let lastExpectedEffect = "Page should load";
+        
+        const steps = [];
+        let completed = false;
+        let stepCount = 0;
+        
+        const MAX_STEPS = 20; 
+
+        try {
+            console.log(`[Shopper] Navigating to target: ${url}`);
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
+            await this.enableThrottling(page);
+
+            while (!completed && stepCount < MAX_STEPS) {
+                stepCount++;
+                console.log(`\n--- Step ${stepCount} ---`);
+                
+                try { await page.waitForLoadState('networkidle', { timeout: 3000 }); } catch(e) {}
+                await page.waitForTimeout(1000);
+
+                // --- 1. UNIVERSAL SEMANTIC SET-OF-MARK ---
+                const { count, elementMap } = await page.evaluate(() => {
+                    let idCounter = 1;
+                    let map = {};
+                    
+                    document.querySelectorAll('.ai-marker').forEach(el => el.remove());
+                    document.querySelectorAll('[data-ai-id]').forEach(el => el.removeAttribute('data-ai-id'));
+
+                    const semanticSelector = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"]';
+                    const semanticItems = Array.from(document.querySelectorAll(semanticSelector));
+
+                    const allElements = document.querySelectorAll('div, span, li, img, h1, h2, h3, h4, h5, h6');
+                    const pointerItems = Array.from(allElements).filter(el => {
+                        return window.getComputedStyle(el).cursor === 'pointer';
+                    });
+
+                    const allItems = [...new Set([...semanticItems, ...pointerItems])];
+
+                    let validCount = 0;
+                    
+                    allItems.forEach(el => {
+                        const rect = el.getBoundingClientRect();
+                        const style = window.getComputedStyle(el);
+
+                        if (rect.width > 2 && rect.height > 2 && 
+                            style.visibility !== 'hidden' && 
+                            style.display !== 'none' && 
+                            style.opacity !== '0') {
+                            
+                            const centerX = rect.left + rect.width / 2;
+                            const centerY = rect.top + rect.height / 2;
+                            const topElement = document.elementFromPoint(centerX, centerY);
+
+                            if (topElement && (el.contains(topElement) || topElement.contains(el))) {
+                                el.setAttribute('data-ai-id', idCounter);
+                                
+                                let label = el.innerText || el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || el.getAttribute('title') || "Icon";
+                                label = label.substring(0, 60).replace(/\n/g, ' ').trim();
+                                
+                                if (label.length === 0 && el.tagName === 'INPUT') label = "Input Field";
+                                
+                                map[idCounter] = `<${el.tagName.toLowerCase()}> ${label}`;
+
+                                const badge = document.createElement('div');
+                                badge.className = 'ai-marker';
+                                badge.textContent = idCounter;
+                                badge.style.position = 'absolute';
+                                badge.style.left = (window.scrollX + rect.left) + 'px';
+                                badge.style.top = (window.scrollY + rect.top) + 'px';
+                                badge.style.backgroundColor = '#ff0000';
+                                badge.style.color = 'white';
+                                badge.style.fontSize = '12px';
+                                badge.style.fontWeight = 'bold';
+                                badge.style.zIndex = '2147483647';
+                                badge.style.padding = '2px 4px';
+                                badge.style.borderRadius = '4px';
+                                badge.style.pointerEvents = 'none'; 
+                                badge.style.boxShadow = '0 0 2px white';
+                                document.body.appendChild(badge);
+                                
+                                idCounter++;
+                                validCount++;
+                            }
+                        }
+                    });
+                    return { count: validCount, elementMap: map };
+                });
+                
+                console.log(`   👁️  Vision: Marked ${count} universal elements.`);
+
+                // --- 2. CAPTURE ---
+                const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60 });
+                const base64Image = screenshotBuffer.toString('base64');
+                fs.writeFileSync(path.join(sessionPath, `step-${stepCount}.jpg`), screenshotBuffer);
+
+                // --- 3. ANALYZE ---
+                const contextData = {
+                    milestones,
+                    lastStepDescription,
+                    lastActionTaken,
+                    lastActionResult, 
+                    lastExpectedEffect,
+                    currentUrl: page.url(),
+                    elementMap 
+                };
+
+                const aiDecision = await this.analyzePage(base64Image, goal, contextData);
+
+                if (!aiDecision) {
+                    console.log('⚠️ AI glitch. Retrying step...');
+                    continue;
+                }
+
+                // *** INTEGRATION START: LOG TO FRICTION ENGINE ***
+                this.frictionEngine.logEvent('ai_thought', {
+                    thought: aiDecision.reasoning,
+                    aiFrustrationLevel: aiDecision.frustration_level,
+                    diagnosis: aiDecision.diagnosis,
+                    severity: aiDecision.severity,
+                    action: aiDecision.action,
+                    url: page.url(),
+                    currentMilestone: aiDecision.current_milestone
+                });
+                // *** INTEGRATION END ***
+
+                if (aiDecision.verification_verdict === "VERIFIED_SUCCESS") {
+                    console.log(`✅ VERIFIED: Previous action worked.`);
+                } else {
+                    console.log(`⚠️ VERIFICATION FAILED: ${aiDecision.verification_reasoning}`);
+                }
+
+                console.log(`🧠 Situation: ${aiDecision.current_page_description}`);
+                console.log(`🎯 Milestone: ${aiDecision.current_milestone}`);
+                console.log(`👉 Action: ${aiDecision.action} ${aiDecision.elementId ? `(ID ${aiDecision.elementId})` : ''}`);
+
+                lastStepDescription = aiDecision.current_page_description;
+                lastActionTaken = `${aiDecision.action} on ${aiDecision.reasoning}`;
+                lastExpectedEffect = aiDecision.expected_effect;
+
+                steps.push({ step: stepCount, ...aiDecision });
+
+                if (aiDecision.action === 'finish') {
+                    completed = true;
+                    this.frictionEngine.logEvent('action_finish', { action: 'finish' });
+                    break;
+                }
+                if (aiDecision.diagnosis === 'CRITICAL_FAILURE') break;
+
+                // --- 4. EXECUTE ---
+                try {
+                    await this.executeAction(page, aiDecision);
+                    lastActionResult = "Success";
+                } catch (err) {
+                    console.log(`   ❌ Action Failed: ${err.message}`);
+                    lastActionResult = `FAILED: ${err.message}`;
+                    
+                    this.frictionEngine.logEvent('ui_error', {
+                        thought: `Interaction failed: ${err.message}`,
+                        aiFrustrationLevel: 8,
+                        diagnosis: 'UI Interaction Failed',
+                        severity: 'Medium',
+                        action: aiDecision.action,
+                        url: page.url()
+                    });
+
+                    if (err.message.includes('intercepts pointer events') || err.message.includes('Timeout') || err.message.includes('closed')) {
+                        if (!page.isClosed()) await page.keyboard.press('Escape'); 
+                    }
+                    if (err.message.includes('Target page, context or browser has been closed')) break; 
+                }
+            }
+        } catch (error) {
+            console.error('[Shopper] System Error:', error.message);
+        } finally {
+            if (context) {
+                try { await context.close(); } catch (e) { }
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            const videoFiles = fs.readdirSync(sessionPath).filter((f) => f.endsWith('.webm'));
+            if (videoFiles.length > 0) {
+                try {
+                    fs.renameSync(path.join(sessionPath, videoFiles[0]), path.join(sessionPath, 'recording.webm'));
+                    console.log('🎥 Video recording saved.');
+                } catch (e) { console.error('Failed to rename video:', e.message); }
+            }
+        }
+
+        const report = this.frictionEngine.getReport();
+        report.videoUrl = `/sessions/${sessionDirName}/recording.webm`;
+        await this.notifier.sendAlert(report, goal, url);
+        return report;
+    }
+
+    async analyzePage(base64Image, goal, context) {
+        // THE FINAL PROMPT
+        const prompt = `
+USER GOAL: "${goal}"
+MILESTONES: ${JSON.stringify(context.milestones)}
+ELEMENT MAP (ID -> Text): ${JSON.stringify(context.elementMap)}
+
+HISTORY:
+- Last Action: "${context.lastActionTaken}"
+- EXPECTED EFFECT: "${context.lastExpectedEffect}"
+
+PRIME DIRECTIVE:
+1. First, VERIFY if the "EXPECTED EFFECT" happened by looking at the screen.
+2. **If VERIFIED_SUCCESS**: Your next 'current_milestone' MUST be the next one in the list. Your next 'action' MUST be to find an element related to this NEW milestone. Do NOT interact with elements from the old milestone.
+3. **If VERIFICATION_FAILED**: Your next 'action' must be to try and fix the problem or try a different approach to the SAME milestone.
+
+UNIVERSAL WEB LOGIC:
+- **Toggle Rule**: If a button text flips state (Add->Remove), the action is COMPLETE.
+- **Contextual Attention**: If Navigating, prioritize Headers/Menus. If Searching, prioritize Content/Scrolling.
+
+INSTRUCTIONS:
+Follow the PRIME DIRECTIVE to decide your next move.
+
+RESPONSE FORMAT (JSON):
+{
+  "verification_verdict": "VERIFIED_SUCCESS" | "VERIFICATION_FAILED",
+  "verification_reasoning": "Why?",
+  "current_page_description": "1 sentence describing the screen",
+  "current_milestone": "Active milestone (MUST advance if VERIFIED_SUCCESS)",
+  "action": "click" | "type" | "scroll" | "finish",
+  "elementId": number,
+  "text": "text (if type)",
+  "reasoning": "Why this element? (Link it to the NEW milestone if verified)",
+  "expected_effect": "Visual prediction of next state",
+  "frustration_level": 0-10,
+  "diagnosis": "Healthy" | "Stuck",
+  "severity": "None" | "Low" | "Medium"
 }
+`;
+        try {
+            let textResponse = await aiClient.analyze(prompt, base64Image);
+            let cleanedText = textResponse.replace(/```json|```/g, '').trim();
+            const firstBracket = cleanedText.indexOf('{');
+            const lastBracket = cleanedText.lastIndexOf('}');
+            if (firstBracket === -1) return null;
+            return JSON.parse(cleanedText.substring(firstBracket, lastBracket + 1));
+        } catch (e) {
+            return null;
+        }
+    }
 
+    async executeAction(page, decision) {
+        if (decision.action === 'scroll') {
+            console.log("   📜 Scrolling page...");
+            await page.keyboard.press('PageDown');
+            return;
+        }
+        
+        if (decision.action === 'finish') return;
 
+        if (decision.action === 'click' || decision.action === 'type') {
+            const selector = `[data-ai-id="${decision.elementId}"]`;
+            const locator = page.locator(selector);
+            
+            if (await locator.count() === 0) throw new Error(`Element #${decision.elementId} not found`);
+
+            await page.evaluate((sel) => {
+                const el = document.querySelector(sel);
+                if (el) el.style.outline = '4px solid #00ff00';
+            }, selector);
+
+            // Clean badges before interaction
+            await page.evaluate(() => {
+                document.querySelectorAll('.ai-marker').forEach(el => el.remove());
+            });
+
+            if (decision.action === 'click') {
+                await locator.click({ timeout: 5000 });
+            }
+            else if (decision.action === 'type') {
+                await locator.fill(decision.text || '');
+                const tagName = await locator.evaluate(node => node.tagName);
+                if (tagName.toLowerCase() === 'input') {
+                    await page.keyboard.press('Enter');
+                }
+            }
+        }
+    }
+}
 module.exports = MysteryShopper;
