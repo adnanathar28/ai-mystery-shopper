@@ -14,16 +14,16 @@ class MysteryShopper {
         this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL);
     }
 
-    async enableThrottling(page) {
-        const client = await page.context().newCDPSession(page);
-        await client.send('Network.emulateNetworkConditions', {
-            offline: false,
-            downloadThroughput: 750 * 1024 / 8,
-            uploadThroughput: 250 * 1024 / 8,
-            latency: 100
-        });
-        console.log("📡 Network throttled to Slow 3G (Universal Stress Test)");
-    }
+    // async enableThrottling(page) {
+    //     const client = await page.context().newCDPSession(page);
+    //     await client.send('Network.emulateNetworkConditions', {
+    //         offline: false,
+    //         downloadThroughput: 750 * 1024 / 8,
+    //         uploadThroughput: 250 * 1024 / 8,
+    //         latency: 100
+    //     });
+    //     console.log("📡 Network throttled to Slow 3G (Universal Stress Test)");
+    // }
 
     /**
      * NUCLEAR OPTION: Manually writes Chrome Preferences to disable
@@ -143,6 +143,20 @@ class MysteryShopper {
         });
 
         const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+
+        const sessionLogs = { errors: [], console: [] };
+
+        page.on('response', (response) => {
+          if (response.status() >= 400) {
+            sessionLogs.errors.push(`[${response.status()}] ${response.url()}`);
+          }
+        });
+
+        page.on('console', (msg) => {
+          if (msg.type() === 'error') {
+            sessionLogs.console.push(msg.text());
+          }
+        });
         
         let lastStepDescription = "Start of mission";
         let lastActionTaken = "Navigated to URL";
@@ -158,7 +172,7 @@ class MysteryShopper {
         try {
             console.log(`[Shopper] Navigating to target: ${url}`);
             await page.goto(url, { waitUntil: 'domcontentloaded' });
-            await this.enableThrottling(page);
+            //await this.enableThrottling(page);
 
             while (!completed && stepCount < MAX_STEPS) {
                 stepCount++;
@@ -250,7 +264,11 @@ class MysteryShopper {
                     lastActionResult, 
                     lastExpectedEffect,
                     currentUrl: page.url(),
-                    elementMap 
+                    elementMap,
+                    technicalLogs: {
+                        networkErrors: sessionLogs.errors.slice(-5), // last 5 errors
+                        consoleErrors: sessionLogs.console.slice(-5)
+                    }
                 };
 
                 const aiDecision = await this.analyzePage(base64Image, goal, contextData);
@@ -351,6 +369,15 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(context.elementMap)}
 HISTORY:
 - Last Action: "${context.lastActionTaken}"
 - EXPECTED EFFECT: "${context.lastExpectedEffect}"
+
+# TECHNICAL CONTEXT
+- Network Errors: ${JSON.stringify(context.technicalLogs.networkErrors)}
+- Console Errors: ${JSON.stringify(context.technicalLogs.consoleErrors)}
+
+# DIAGNOSTIC RULE
+- If you see a 500 status code in Network Errors, your diagnosis MUST be "Backend Error".
+- If you see a Javascript error in Console, your diagnosis MUST be "Frontend Crash".
+- If the screen looks empty but the elements exist, your diagnosis is "UI Glitch".
 
 PRIME DIRECTIVE:
 1. First, VERIFY if the "EXPECTED EFFECT" happened by looking at the screen.
