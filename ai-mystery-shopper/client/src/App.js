@@ -1,125 +1,95 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import { AlertCircle, CheckCircle, Play, Loader, Video } from 'lucide-react';
+import { 
+  LayoutDashboard, 
+  PlayCircle, 
+  List, 
+  AlertTriangle, 
+  FileText, 
+  Settings, 
+  Zap,
+  Clock,
+  ShieldAlert,
+  Activity
+} from 'lucide-react';
 import './App.css';
 
+// We will build these sub-views next
+import DashboardHome from './views/DashboardHome';
+// import RunsList from './views/RunsList';
+// import LiveRunConfig from './views/LiveRunConfig';
+
 function App() {
-  const [url, setUrl] = useState('');
-  const [goal, setGoal] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState(null);
-  const [error, setError] = useState('');
+  const [activeView, setActiveView] = useState('dashboard');
+  
+  // This would eventually come from your backend/database
+  const [runsHistory, setRunsHistory] = useState([
+    { id: 'RUN-7329', status: 'Completed', score: 12, device: 'iPhone 13', url: 'https://example.com', date: 'Feb 10, 10:30 PM' },
+    { id: 'RUN-7330', status: 'Issue Found', score: 82, device: 'Desktop Chrome', url: 'https://shop.com', date: 'Feb 11, 02:15 AM' },
+  ]);
 
-  const runTest = async () => {
-    if (!url || !goal) return alert("Please fill in both fields");
-    setLoading(true);
-    setReport(null);
-    setError('');
-
-    try {
-      const response = await axios.post('http://localhost:3001/api/shop', { url, goal });
-      setReport(response.data.report);
-    } catch (err) {
-      setError('Error: Ensure backend is running on port 3001.');
-      console.error(err);
-    } finally {
-      setLoading(false);
+  const renderView = () => {
+    switch(activeView) {
+      case 'dashboard': return <DashboardHome runs={runsHistory} />;
+      // case 'runs': return <RunsList runs={runsHistory} />;
+      // case 'config': return <LiveRunConfig />;
+      default: return <DashboardHome />;
     }
   };
 
   return (
-    <div className="app-container">
-      <header>
-        <h1>AI Mystery Shopper</h1>
-        <p>Mobile UX Friction Detector</p>
-      </header>
-
-      <div className="input-card">
-        <div className="input-group">
-          <label>Target Website URL</label>
-          <input 
-            type="text" 
-            placeholder="https://www.example.com" 
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-        </div>
-        <div className="input-group">
-          <label>Shopper Goal</label>
-          <input 
-            type="text" 
-            placeholder="e.g., Login and find the contact page" 
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-          />
+    <div className="dashboard-container">
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+        <div className="logo">
+          <Zap color="#60a5fa" fill="#60a5fa" size={24} />
+          <span>SentinelBot</span>
         </div>
         
-        <button onClick={runTest} disabled={loading} className="start-btn">
-          {loading ? <><Loader className="spin"/> Simulating Mobile User...</> : <><Play size={18}/> Start Mission</>}
-        </button>
-      </div>
+        <nav>
+          <button 
+            className={activeView === 'dashboard' ? 'active' : ''} 
+            onClick={() => setActiveView('dashboard')}
+          >
+            <LayoutDashboard size={20} /> Dashboard
+          </button>
+          <button 
+            className={activeView === 'config' ? 'active' : ''} 
+            onClick={() => setActiveView('config')}
+          >
+            <PlayCircle size={20} /> Run Now
+          </button>
+          <button 
+            className={activeView === 'runs' ? 'active' : ''} 
+            onClick={() => setActiveView('runs')}
+          >
+            <List size={20} /> All Runs
+          </button>
+          <button>
+            <AlertTriangle size={20} /> Issues
+          </button>
+          <button>
+            <FileText size={20} /> Evidence
+          </button>
+        </nav>
 
-      {error && <div className="error-msg">{error}</div>}
-
-      {report && (
-        <div className="results-area">
-          {/* SCORE CARD */}
-          <div className="score-card">
-            <h2>Confusion Score</h2>
-            <div className={`score ${report.confusionScore > 60 ? 'bad' : report.confusionScore > 30 ? 'warning' : 'good'}`}>
-              {report.confusionScore}/100
-            </div>
-            <div className="status">
-              {report.confusionScore > 60 
-                ? <><AlertCircle color="#ff6b6b"/> Critical Friction</> 
-                : report.confusionScore > 30
-                ? <><AlertCircle color="#fcc419"/> Potential UX Issue</>
-                : <><CheckCircle color="#51cf66"/> Smooth Experience</>}
-            </div>
-            {report.topDiagnosis !== "None" && (
-                <div className="diagnosis-badge">
-                    Diagnosis: <strong>{report.topDiagnosis}</strong>
-                </div>
-            )}
-          </div>
-
-          {/* VIDEO EVIDENCE PLAYER (NEW) */}
-          {report.videoUrl && (
-            <div className="video-card" style={{ marginBottom: '30px', background: '#1f2937', padding: '20px', borderRadius: '12px' }}>
-                <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Video size={20} /> Session Evidence
-                </h3>
-                <video 
-                    controls 
-                    width="100%" 
-                    src={`http://localhost:3001${report.videoUrl}`} 
-                    style={{ borderRadius: '8px', marginTop: '10px', border: '1px solid #374151' }}
-                />
-            </div>
-          )}
-
-          {/* LOGS */}
-          <div className="timeline">
-            <h3>Shopper Journey Log</h3>
-            {report.log.filter(l => l.type === 'ai_thought').map((step, i) => (
-              <div key={i} className="log-item">
-                <div className="step-number">{i + 1}</div>
-                <div className="step-content">
-                  <p className="thought">"{step.details.thought}"</p>
-                  <div className="meta">
-                    <span className="frustration">{step.details.aiFrustrationLevel <= 2 ? 'Status: Smooth' : `Frustration: ${step.details.aiFrustrationLevel}/10`}</span>
-                    {step.details.diagnosis && step.details.diagnosis !== "Healthy" && (
-                         <span className="frustration" style={{background: '#7f1d1d', color: '#fecaca', marginLeft: '10px'}}>
-                            {step.details.diagnosis}
-                         </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="sidebar-footer">
+          <button><Settings size={20} /> Settings</button>
         </div>
-      )}
+      </aside>
+
+      {/* MAIN CONTENT AREA */}
+      <main className="main-content">
+        <header className="top-bar">
+          <div className="breadcrumb">Project / {activeView.toUpperCase()}</div>
+          <button className="run-btn" onClick={() => setActiveView('config')}>
+            <PlayCircle size={18} /> Run Mission
+          </button>
+        </header>
+
+        <section className="view-container">
+          {renderView()}
+        </section>
+      </main>
     </div>
   );
 }
