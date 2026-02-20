@@ -1,7 +1,8 @@
+// src/config/personas.js
 module.exports = {
     first_time_user: {
         label: "First-Time User",
-        behavior: "You are a FIRST-TIME user. You read every label and look for obvious buttons. If something isn't clear in 5 seconds, flag it as a UX issue."
+        behavior: "You are a FIRST-TIME user. You are unfamiliar with the layout, but you are CAPABLE. Do not invent problems. Only flag an issue if an element is truly broken, overlapping, or completely unreadable. If you are on the 'Products' page, you have successfully logged in—do not try to go back to login."
     },
     elderly_user: {
         label: "Elderly User",

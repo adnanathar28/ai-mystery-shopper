@@ -195,7 +195,7 @@ class MysteryShopper {
                 fs.writeFileSync(path.join(sessionPath, `step-${stepCount}.jpg`), screenshotBuffer);
 
                 // --- 3. ANALYZE (Using external System Prompt) ---
-                const history = {
+                const contextData = {
                     lastStepDescription,
                     lastActionTaken,
                     lastActionResult,
@@ -213,10 +213,10 @@ class MysteryShopper {
                     elementMap, 
                     config.persona, 
                     deviceConfig.label, 
-                    history
+                    contextData
                 );
 
-                const aiDecision = await this.analyzePage(base64Image, prompt);
+                const aiDecision = await this.analyzePage(base64Image, prompt, contextData);
 
                 if (!aiDecision) {
                     console.log('⚠️ AI glitch. Retrying step...');
@@ -340,6 +340,7 @@ class MysteryShopper {
         if (decision.action === 'click' || decision.action === 'type') {
             const selector = `[data-ai-id="${decision.elementId}"]`;
             const locator = page.locator(selector);
+            
             
             if (await locator.count() === 0) throw new Error(`Element #${decision.elementId} not found`);
 

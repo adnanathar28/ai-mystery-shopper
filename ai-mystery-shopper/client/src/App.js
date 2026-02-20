@@ -9,6 +9,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
+  const [persona, setPersona] = useState('first_time_user');
+  const [device, setDevice] = useState('mobile');
 
   const runTest = async () => {
     if (!url || !goal) return alert("Please fill in both fields");
@@ -17,7 +19,13 @@ function App() {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:3001/api/shop', { url, goal });
+      // Sending persona and device to the backend
+      const response = await axios.post('http://localhost:3001/api/shop', { 
+        url, 
+        goal, 
+        persona, 
+        device 
+      });
       setReport(response.data.report);
     } catch (err) {
       setError('Error: Ensure backend is running on port 3001.');
@@ -53,9 +61,30 @@ function App() {
             onChange={(e) => setGoal(e.target.value)}
           />
         </div>
+
+        {/* PERSONA & DEVICE CONFIGURATION */}
+        <div className="config-section" style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
+          <div className="input-group" style={{ flex: 1 }}>
+            <label>Persona</label>
+            <select value={persona} onChange={(e) => setPersona(e.target.value)} className="config-select">
+              <option value="first_time_user">First-Time User</option>
+              <option value="elderly_user">Elderly User</option>
+              <option value="power_user">Power User</option>
+              <option value="adversarial_tester">Adversarial Tester</option>
+            </select>
+          </div>
+          
+          <div className="input-group" style={{ flex: 1 }}>
+            <label>Device</label>
+            <select value={device} onChange={(e) => setDevice(e.target.value)} className="config-select">
+              <option value="mobile">iPhone 13 (Mobile)</option>
+              <option value="tablet">iPad Mini (Tablet)</option>
+            </select>
+          </div>
+        </div>
         
         <button onClick={runTest} disabled={loading} className="start-btn">
-          {loading ? <><Loader className="spin"/> Simulating Mobile User...</> : <><Play size={18}/> Start Mission</>}
+          {loading ? <><Loader className="spin"/> Simulating {persona.replace('_', ' ')}...</> : <><Play size={18}/> Start Mission</>}
         </button>
       </div>
 
@@ -63,7 +92,6 @@ function App() {
 
       {report && (
         <div className="results-area">
-          {/* SCORE CARD */}
           <div className="score-card">
             <h2>Confusion Score</h2>
             <div className={`score ${report.confusionScore > 60 ? 'bad' : report.confusionScore > 30 ? 'warning' : 'good'}`}>
@@ -77,28 +105,26 @@ function App() {
                 : <><CheckCircle color="#51cf66"/> Smooth Experience</>}
             </div>
             {report.topDiagnosis !== "None" && (
-                <div className="diagnosis-badge">
-                    Diagnosis: <strong>{report.topDiagnosis}</strong>
+                <div className="diagnosis-badge" style={{marginTop: '15px', padding: '8px', background: '#374151', borderRadius: '6px', fontSize: '0.9rem'}}>
+                    Top Diagnosis: <strong>{report.topDiagnosis}</strong>
                 </div>
             )}
           </div>
 
-          {/* VIDEO EVIDENCE PLAYER (NEW) */}
           {report.videoUrl && (
-            <div className="video-card" style={{ marginBottom: '30px', background: '#1f2937', padding: '20px', borderRadius: '12px' }}>
-                <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="video-card" style={{ marginBottom: '30px', background: '#1f2937', padding: '20px', borderRadius: '12px', border: '1px solid #374151' }}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 15px 0' }}>
                     <Video size={20} /> Session Evidence
                 </h3>
                 <video 
                     controls 
                     width="100%" 
                     src={`http://localhost:3001${report.videoUrl}`} 
-                    style={{ borderRadius: '8px', marginTop: '10px', border: '1px solid #374151' }}
+                    style={{ borderRadius: '8px', border: '1px solid #374151' }}
                 />
             </div>
           )}
 
-          {/* LOGS */}
           <div className="timeline">
             <h3>Shopper Journey Log</h3>
             {report.log.filter(l => l.type === 'ai_thought').map((step, i) => (

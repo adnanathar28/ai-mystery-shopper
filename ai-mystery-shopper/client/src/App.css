@@ -98,3 +98,23 @@ header p { color: #9ca3af; margin-top: 10px; }
 }
 .thought { margin: 0 0 10px 0; font-style: italic; color: #e5e7eb; }
 .frustration { font-size: 0.8rem; background: #374151; padding: 4px 8px; rounded: 4px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; }
+
+.config-select {
+  width: 100%;
+  padding: 12px;
+  background: #111827; /* Matches your theme */
+  border: 1px solid #374151;
+  color: white;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.config-select:hover {
+  border-color: #4b5563;
+}
+
+.config-select:focus {
+  border-color: #2563eb;
+}
