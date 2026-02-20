@@ -20,9 +20,12 @@ app.use('/sessions', express.static(path.join(__dirname, '../public/sessions')))
 const shopper = new MysteryShopper(process.env.GEMINI_API_KEY);
 
 app.post('/api/shop', async (req, res) => {
-  const { url, goal } = req.body;
+  const { url, goal, persona, device } = req.body;
   try {
-    const report = await shopper.runMission(url, goal);
+    const report = await shopper.runMission(url, goal, {
+        persona: persona || 'first_time_user', 
+        device: device || 'mobile' 
+    });
     res.json({ report });
   } catch (error) {
     console.error(error);

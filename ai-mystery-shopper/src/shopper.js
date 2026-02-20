@@ -5,7 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const Notifier = require('./notifier');
 const aiClient = require('./aiClient');
-const domUtils = require('./domUtils'); // ADDED THIS IMPORT
+const domUtils = require('./domUtils'); 
+const systemPrompt = require('./prompts/systemPrompt'); // IMPORTED
+const DEVICES = require('./config/devices'); // IMPORTED
 
 const USER_DATA_DIR = path.join(__dirname, '../public/user_data');
 
@@ -106,8 +108,10 @@ class MysteryShopper {
         }
     }
 
-    async runMission(url, goal) {
-        const mobileDevice = devices['iPhone 13'];
+    async runMission(url, goal, config={persona: 'first_time_user', device: 'mobile'}) {
+        // Use the imported DEVICES config
+        const deviceConfig = DEVICES[config.device] || DEVICES.mobile;
+        
         const timestamp = Date.now();
         const sessionDirName = `session-${timestamp}`;
         const sessionPath = path.join(__dirname, '../public/sessions', sessionDirName);
@@ -118,9 +122,10 @@ class MysteryShopper {
         this.preloadPreferences();
 
         const milestones = await this.generateMissionPlan(goal);
-        console.log(`[Shopper] Launching Agent...`);
+        console.log(`[Shopper] Launching Agent as ${config.persona} on ${deviceConfig.label}...`);
 
         const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+            ...deviceConfig.settings, // Use settings from config/devices.js
             headless: false,
             channel: 'chrome',
             // Stealth Mode args
@@ -133,13 +138,11 @@ class MysteryShopper {
                 '--no-first-run',
                 '--disable-session-crashed-bubble',
                 '--disable-popup-blocking',
-                // Redundant flags just to be safe
                 '--disable-save-password-bubble',
                 '--password-store=basic',
                 '--deny-permission-prompts',
                 '--disable-notifications'
             ],
-            ...mobileDevice,
             recordVideo: { dir: sessionPath, size: { width: 390, height: 844 } },
         });
 
@@ -191,26 +194,39 @@ class MysteryShopper {
                 const base64Image = screenshotBuffer.toString('base64');
                 fs.writeFileSync(path.join(sessionPath, `step-${stepCount}.jpg`), screenshotBuffer);
 
-                // --- 3. ANALYZE ---
-                const contextData = {
-                    milestones,
+                // --- 3. ANALYZE (Using external System Prompt) ---
+                const history = {
                     lastStepDescription,
                     lastActionTaken,
-                    lastActionResult, 
+                    lastActionResult,
                     lastExpectedEffect,
-                    currentUrl: page.url(),
-                    elementMap,
                     technicalLogs: {
-                        networkErrors: sessionLogs.errors.slice(-5), // last 5 errors
+                        networkErrors: sessionLogs.errors.slice(-5),
                         consoleErrors: sessionLogs.console.slice(-5)
                     }
                 };
 
-                const aiDecision = await this.analyzePage(base64Image, goal, contextData);
+                // Generate prompt using the new Persona logic
+                const prompt = systemPrompt(
+                    goal, 
+                    milestones, 
+                    elementMap, 
+                    config.persona, 
+                    deviceConfig.label, 
+                    history
+                );
+
+                const aiDecision = await this.analyzePage(base64Image, prompt);
 
                 if (!aiDecision) {
                     console.log('⚠️ AI glitch. Retrying step...');
                     continue;
+                }
+
+                // 🚨 REAL-TIME ALERTING CHECK
+                if (aiDecision.reasoning.includes('🚨 ISSUE_FOUND')) {
+                    console.log("🔥 CRITICAL ISSUE DETECTED IN REAL-TIME!");
+                    // Integration note: You can trigger an immediate Slack alert here
                 }
 
                 // *** INTEGRATION START: LOG TO FRICTION ENGINE ***
@@ -297,56 +313,7 @@ class MysteryShopper {
         return report;
     }
 
-    async analyzePage(base64Image, goal, context) {
-        // THE FINAL PROMPT
-        const prompt = `
-USER GOAL: "${goal}"
-MILESTONES: ${JSON.stringify(context.milestones)}
-ELEMENT MAP (ID -> Text): ${JSON.stringify(context.elementMap)}
-
-HISTORY:
-- Last Action: "${context.lastActionTaken}"
-- EXPECTED EFFECT: "${context.lastExpectedEffect}"
-
-# TECHNICAL CONTEXT
-- Network Errors: ${JSON.stringify(context.technicalLogs.networkErrors)}
-- Console Errors: ${JSON.stringify(context.technicalLogs.consoleErrors)}
-
-# DIAGNOSTIC RULE
-- If you see a 500 status code in Network Errors, your diagnosis MUST be "Backend Error".
-- If you see a Javascript error in Console, your diagnosis MUST be "Frontend Crash".
-- If the screen looks empty but the elements exist, your diagnosis is "UI Glitch".
-
-PRIME DIRECTIVE:
-1. First, VERIFY if the "EXPECTED EFFECT" happened by looking at the screen.
-2. **If VERIFIED_SUCCESS**: Your next 'current_milestone' MUST be the next one in the list. Your next 'action' MUST be to find an element related to this NEW milestone. Do NOT interact with elements from the old milestone.
-3. **If VERIFICATION_FAILED**: Your next 'action' must be to try and fix the problem or try a different approach to the SAME milestone.
-
-UNIVERSAL WEB LOGIC:
-- **Toggle Rule**: If a button text flips state (Add->Remove), the action is COMPLETE.
-- **Contextual Attention**: If Navigating, prioritize Headers/Menus. If Searching, prioritize Content/Scrolling.
-
-DEAD-END RULE: If you have scrolled the entire length of the page (top to bottom) and the item is not found, do NOT keep scrolling. Change your action to finish, set your diagnosis to Stuck, and explain in reasoning that the item is missing from the catalog.
-
-INSTRUCTIONS:
-Follow the PRIME DIRECTIVE to decide your next move.
-
-RESPONSE FORMAT (JSON):
-{
-  "verification_verdict": "VERIFIED_SUCCESS" | "VERIFICATION_FAILED",
-  "verification_reasoning": "Why?",
-  "current_page_description": "1 sentence describing the screen",
-  "current_milestone": "Active milestone (MUST advance if VERIFIED_SUCCESS)",
-  "action": "click" | "type" | "scroll" | "finish",
-  "elementId": number,
-  "text": "text (if type)",
-  "reasoning": "Why this element? (Link it to the NEW milestone if verified)",
-  "expected_effect": "Visual prediction of next state",
-  "frustration_level": 0-10,
-  "diagnosis": "Healthy" | "Stuck",
-  "severity": "None" | "Low" | "Medium"
-}
-`;
+    async analyzePage(base64Image, prompt) {
         try {
             let textResponse = await aiClient.analyze(prompt, base64Image);
             let cleanedText = textResponse.replace(/```json|```/g, '').trim();
@@ -355,6 +322,7 @@ RESPONSE FORMAT (JSON):
             if (firstBracket === -1) return null;
             return JSON.parse(cleanedText.substring(firstBracket, lastBracket + 1));
         } catch (e) {
+            console.error("[Shopper] AI Analysis failed:", e.message);
             return null;
         }
     }
@@ -363,7 +331,7 @@ RESPONSE FORMAT (JSON):
         if (decision.action === 'scroll') {
             console.log("   📜 Scrolling page...");
             await page.keyboard.press('PageDown');
-            await page.waitForTimeout(1000); // Small wait for scroll to settle
+            await page.waitForTimeout(1000); 
             return;
         }
         
@@ -375,16 +343,14 @@ RESPONSE FORMAT (JSON):
             
             if (await locator.count() === 0) throw new Error(`Element #${decision.elementId} not found`);
 
-            // Visual feedback: Green outline on what the AI is about to touch
+            // Visual feedback: Green outline
             await page.evaluate((sel) => {
                 const el = document.querySelector(sel);
                 if (el) el.style.outline = '4px solid #00ff00';
             }, selector);
 
-            // Badges were already cleaned up in runMission right before calling this, 
-            // but we do a final check here to ensure interaction logic is pure.
             if (decision.action === 'click') {
-                await locator.click({ timeout: 5000 });
+                await locator.click({ timeout: 5000, force: true });
                 console.log(`   [Action] Clicked element ID: ${decision.elementId}`);
             }
             else if (decision.action === 'type') {
@@ -396,8 +362,6 @@ RESPONSE FORMAT (JSON):
                 console.log(`   [Action] Typed text into element ID: ${decision.elementId}`);
             }
 
-            // --- THE FIX: WAIT AFTER THE ACTION ---
-            // This ensures the next screenshot shows the RESULT of the click
             if (decision.action === 'click') {
                 await page.waitForTimeout(3000); 
             } else {
