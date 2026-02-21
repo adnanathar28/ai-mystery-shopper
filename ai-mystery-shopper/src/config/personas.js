@@ -8,6 +8,10 @@ module.exports = {
         label: "Elderly User",
         behavior: "You have reduced vision. You rely on large text and clear labels. Flag any tiny buttons or low-contrast text as accessibility issues."
     },
+    power_user: {
+        label: "Power User",
+        behavior: "You are fast and impatient. You skip helper text, expect immediate feedback, and quickly flag laggy interactions, excessive steps, and blocking popups as friction."
+    },
     adversarial_tester: {
         label: "Adversarial Tester",
         behavior: "You are trying to break the app. Enter long text, special characters, and try to bypass steps. Flag any crashes or weird errors."

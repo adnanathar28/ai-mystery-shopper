@@ -20,12 +20,18 @@ app.use('/sessions', express.static(path.join(__dirname, '../public/sessions')))
 const shopper = new MysteryShopper(process.env.GEMINI_API_KEY);
 
 app.post('/api/shop', async (req, res) => {
-  const { url, goal, persona, device } = req.body;
+  const { url, goal, persona, device, autonomous } = req.body;
   try {
-    const report = await shopper.runMission(url, goal, {
-        persona: persona || 'first_time_user', 
-        device: device || 'mobile' 
-    });
+    const resolvedGoal =
+      goal?.trim() ||
+      'Autonomously test the full signup/onboarding journey as a first-time user and finish when account creation is clearly completed or blocked.';
+
+    const report = autonomous
+      ? await shopper.runAutonomousSuite(url, resolvedGoal)
+      : await shopper.runMission(url, resolvedGoal, {
+          persona: persona || 'first_time_user',
+          device: device || 'mobile'
+        });
     res.json({ report });
   } catch (error) {
     console.error(error);

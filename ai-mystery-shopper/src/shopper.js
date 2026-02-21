@@ -108,6 +108,39 @@ class MysteryShopper {
         }
     }
 
+
+    async runAutonomousSuite(url, goal) {
+        const scenarios = [
+            { persona: 'first_time_user', device: 'mobile' },
+            { persona: 'elderly_user', device: 'mobile' },
+            { persona: 'power_user', device: 'mobile' },
+            { persona: 'first_time_user', device: 'tablet' }
+        ];
+
+        const runs = [];
+
+        for (const scenario of scenarios) {
+            console.log(`[Shopper] Autonomous run: ${scenario.persona} on ${scenario.device}`);
+            const report = await this.runMission(url, goal, scenario);
+            runs.push({ scenario, report });
+        }
+
+        const rankedRuns = [...runs].sort((a, b) => b.report.confusionScore - a.report.confusionScore);
+        const worstRun = rankedRuns[0];
+
+        return {
+            mode: 'autonomous',
+            target: url,
+            goal,
+            summary: {
+                scenariosTested: runs.length,
+                worstScore: worstRun?.report?.confusionScore || 0,
+                topDiagnosis: worstRun?.report?.topDiagnosis || 'None'
+            },
+            runs
+        };
+    }
+
     async runMission(url, goal, config={persona: 'first_time_user', device: 'mobile'}) {
         // Use the imported DEVICES config
         const deviceConfig = DEVICES[config.device] || DEVICES.mobile;
