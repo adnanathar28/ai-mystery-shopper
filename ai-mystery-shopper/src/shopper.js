@@ -17,6 +17,38 @@ class MysteryShopper {
         this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL);
     }
 
+    //this function guides the ai in an autonomous manner
+    async discoverGoal(page) {
+    console.log("🕵️  Autonomous Mode: Discovering primary test objective...");
+    
+    // Take a screenshot of the landing page
+    const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60 });
+    const base64Image = screenshotBuffer.toString('base64');
+
+    const prompt = `
+    You are a Senior QA Engineer. Look at this homepage.
+    Your objective: Identify the most critical user journey for a NEW user to gain value from this site.
+    (e.g., "Sign up for a new account", "Search and book a flight", "Add an item to cart and checkout")
+    
+    Return your answer in RAW JSON format:
+    {
+      "goal": "The primary goal string",
+      "rationale": "Why this is the most important flow to test"
+    }`;
+
+    try {
+        const result = await aiClient.analyze(prompt, base64Image);
+        const cleanResult = result.replace(/```json|```/g, '').trim();
+        const discovery = JSON.parse(cleanResult);
+        console.log(`🎯  Autonomous Goal Selected: ${discovery.goal}`);
+        console.log(`💡  Rationale: ${discovery.rationale}`);
+        return discovery.goal;
+    } catch (e) {
+        console.error("Discovery failed, falling back to generic exploration.");
+        return "Explore the main call-to-action flow of the website.";
+        }
+    }
+
     // async enableThrottling(page) {
     //     const client = await page.context().newCDPSession(page);
     //     await client.send('Network.emulateNetworkConditions', {
@@ -89,22 +121,33 @@ class MysteryShopper {
     async generateMissionPlan(goal) {
         console.log("🤔 Generating strategic plan...");
         const prompt = `
-        You are an expert QA Strategist.
-        The user wants to: "${goal}".
-        Break this down into 3-5 abstract, high-level milestones.
-        Example: ["Login", "Find Product", "Add to Cart", "Navigate to Cart", "Checkout"]
-        RETURN ONLY A RAW JSON ARRAY OF STRINGS.
-        `;
+            You are an expert QA Strategist.
+            The objective is to test: "${goal}".
+            
+            Create a 4-step mission plan that covers the happy path but also looks for common friction points.
+            1. Navigation/Discovery (Finding the starting point)
+            2. Data Entry/Interaction (Testing forms or buttons)
+            3. Process Submission (The transition state)
+            4. Verification (Confirming the final result)
+
+            RETURN ONLY A RAW JSON ARRAY OF STRINGS.
+            Example: ["Find Signup CTA", "Fill registration form", "Submit and wait for redirect", "Verify Dashboard access"]
+            `;
         
         try {
             const result = await aiClient.analyze(prompt, null); 
-            const cleanResult = result.replace(/```json|```/g, '').trim();
+            // Better cleaning: find the first '[' and last ']'
+            const start = result.indexOf('[');
+            const end = result.lastIndexOf(']');
+            if (start === -1 || end === -1) throw new Error("No JSON array found");
+            
+            const cleanResult = result.substring(start, end + 1);
             const milestones = JSON.parse(cleanResult);
             console.log("🗺️  Mission Plan:", milestones);
             return milestones;
         } catch (e) {
-            console.error("Plan generation failed, using default.");
-            return ["Explore page", "Interact with relevant element", "Verify result"];
+            console.error("Plan generation failed, using fallback.");
+            return ["Navigate to entry point", "Perform primary interaction", "Verify success"];
         }
     }
 
@@ -121,7 +164,6 @@ class MysteryShopper {
         // 1. INJECT PREFERENCES BEFORE BROWSER START
         this.preloadPreferences();
 
-        const milestones = await this.generateMissionPlan(goal);
         console.log(`[Shopper] Launching Agent as ${config.persona} on ${deviceConfig.label}...`);
 
         const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
@@ -130,7 +172,7 @@ class MysteryShopper {
             channel: 'chrome',
             // Stealth Mode args
             ignoreDefaultArgs: ['--enable-automation'], 
-            args: [
+            args: [ //makes it hard to detect as a bot
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
                 '--disable-infobars',
@@ -172,11 +214,17 @@ class MysteryShopper {
         let stepCount = 0;
         
         const MAX_STEPS = 20; 
-
+        
         try {
             console.log(`[Shopper] Navigating to target: ${url}`);
             await page.goto(url, { waitUntil: 'domcontentloaded' });
             //await this.enableThrottling(page);
+
+        if (!goal || goal === "") { //if no goal entered, ai functions autonmously
+            goal = await this.discoverGoal(page);
+        }
+
+        const milestones = await this.generateMissionPlan(goal);
 
             while (!completed && stepCount < MAX_STEPS) {
                 stepCount++;

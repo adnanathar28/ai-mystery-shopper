@@ -22,7 +22,7 @@ const shopper = new MysteryShopper(process.env.GEMINI_API_KEY);
 app.post('/api/shop', async (req, res) => {
   const { url, goal, persona, device } = req.body;
   try {
-    const report = await shopper.runMission(url, goal, {
+    const report = await shopper.runMission(url, goal || "", {
         persona: persona || 'first_time_user', 
         device: device || 'mobile' 
     });

@@ -23,6 +23,12 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
 - Network Errors: ${JSON.stringify(history.technicalLogs.networkErrors)}
 - Console Errors: ${JSON.stringify(history.technicalLogs.consoleErrors)}
 
+# QA INSPECTION RULES:
+1. **Visual Integrity**: Does the page look "broken"? (Overlapping text, buttons cut off, images not loading).
+2. **Interactive Feedback**: When you click, does something happen? If there is a delay > 2 seconds without a spinner, flag it as "Performance Friction".
+3. **Form Logic**: If a form field doesn't explain WHY an input is invalid, flag it as "UX Friction".
+4. **The "Frustration" Metric**: If you have to perform the same action twice, your 'frustration_level' should increase by +3 immediately.
+
 # DIAGNOSTIC RULE
 - If you see a 500 status code in Network Errors, your diagnosis MUST be "Backend Error".
 - If you see a Javascript error in Console, your diagnosis MUST be "Frontend Crash".

@@ -11,9 +11,11 @@ function App() {
   const [error, setError] = useState('');
   const [persona, setPersona] = useState('first_time_user');
   const [device, setDevice] = useState('mobile');
+  const [network, setNetwork] = useState('WiFi');
+  const [locale, setLocale] = useState('EN');
 
   const runTest = async () => {
-    if (!url || !goal) return alert("Please fill in both fields");
+    if (!url) return alert("Please enter a target URL");
     setLoading(true);
     setReport(null);
     setError('');
@@ -24,7 +26,9 @@ function App() {
         url, 
         goal, 
         persona, 
-        device 
+        device,
+        network,
+        locale
       });
       setReport(response.data.report);
     } catch (err) {
@@ -53,32 +57,57 @@ function App() {
           />
         </div>
         <div className="input-group">
-          <label>Shopper Goal</label>
+          <label>Shopper Goal (Leave blank for autonomous discovery)</label>
           <input 
             type="text" 
-            placeholder="e.g., Login and find the contact page" 
+            placeholder="e.g., 'Purchase a hat' or leave blank for Auto-QA" 
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
           />
+          {!goal && <small style={{color: '#60a5fa'}}>Note: AI will automatically determine the best test path!</small>}
         </div>
+        
 
         {/* PERSONA & DEVICE CONFIGURATION */}
-        <div className="config-section" style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
-          <div className="input-group" style={{ flex: 1 }}>
+        {/* PERSONA, DEVICE, NETWORK & LOCALE CONFIGURATION */}
+        <div className="config-grid" style={{ 
+          display: 'grid', 
+          gridTemplateColumns: '1fr 1fr', 
+          gap: '15px', 
+          marginBottom: '20px' 
+        }}>
+          <div className="input-group">
             <label>Persona</label>
             <select value={persona} onChange={(e) => setPersona(e.target.value)} className="config-select">
               <option value="first_time_user">First-Time User</option>
               <option value="elderly_user">Elderly User</option>
-              <option value="power_user">Power User</option>
               <option value="adversarial_tester">Adversarial Tester</option>
             </select>
           </div>
           
-          <div className="input-group" style={{ flex: 1 }}>
+          <div className="input-group">
             <label>Device</label>
             <select value={device} onChange={(e) => setDevice(e.target.value)} className="config-select">
-              <option value="mobile">iPhone 13 (Mobile)</option>
-              <option value="tablet">iPad Mini (Tablet)</option>
+              <option value="mobile">iPhone 13</option>
+              <option value="tablet">iPad Mini</option>
+            </select>
+          </div>
+
+          <div className="input-group">
+            <label>Network Speed</label>
+            <select value={network} onChange={(e) => setNetwork(e.target.value)} className="config-select">
+              <option value="WiFi">WiFi (No Throttling)</option>
+              <option value="4G">4G (Average)</option>
+              <option value="3G">3G (Slow/Stress Test)</option>
+            </select>
+          </div>
+
+          <div className="input-group">
+            <label>Target Locale</label>
+            <select value={locale} onChange={(e) => setLocale(e.target.value)} className="config-select">
+              <option value="EN">English</option>
+              <option value="ES">Spanish</option>
+              <option value="FR">French</option>
             </select>
           </div>
         </div>

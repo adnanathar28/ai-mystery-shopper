@@ -88,6 +88,13 @@ class FrictionEngine {
     return Math.min(Math.max(score, 0), 100);
   }
 
+  calculateSeverity(score) {
+    if (score >= 80) return "P0 - Critical Blocker";
+    if (score >= 50) return "P1 - High Friction";
+    if (score >= 30) return "P2 - Moderate Issue";
+    return "P3 - Minor/Healthy";
+  }
+
 getReport() {
     const rawScore = this.calculateScore();
     
