@@ -15,6 +15,7 @@ class MysteryShopper {
     constructor() {
         this.frictionEngine = new FrictionEngine();
         this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL);
+        this.missionRationale = null;
     }
 
     //this function guides the ai in an autonomous manner
@@ -26,9 +27,13 @@ class MysteryShopper {
     const base64Image = screenshotBuffer.toString('base64');
 
     const prompt = `
-    You are a Senior QA Engineer. Look at this homepage.
-    Your objective: Identify the most critical user journey for a NEW user to gain value from this site.
-    (e.g., "Sign up for a new account", "Search and book a flight", "Add an item to cart and checkout")
+    You are a Senior QA Engineer. 
+    Look at this page. Your goal is to find the most important journey for a NEW user.
+
+    IMPORTANT RULES:
+    1. If the page has a "Login" and a "Sign Up" option, and no credentials are provided, PRIORITIZE the "Sign Up" or "Registration" flow.
+    2. If you choose a flow that requires data (email, name, etc.), you are authorized to use dummy test data (e.g., 'testuser_123@example.com').
+    3. Avoid flows that require real credit cards or SMS verification.
     
     Return your answer in RAW JSON format:
     {
@@ -42,9 +47,11 @@ class MysteryShopper {
         const discovery = JSON.parse(cleanResult);
         console.log(`🎯  Autonomous Goal Selected: ${discovery.goal}`);
         console.log(`💡  Rationale: ${discovery.rationale}`);
+        this.missionRationale = discovery.rationale || null;
         return discovery.goal;
     } catch (e) {
         console.error("Discovery failed, falling back to generic exploration.");
+        this.missionRationale = "Fallback goal used because autonomous discovery failed.";
         return "Explore the main call-to-action flow of the website.";
         }
     }
@@ -152,6 +159,9 @@ class MysteryShopper {
     }
 
     async runMission(url, goal, config={persona: 'first_time_user', device: 'mobile'}) {
+        // Keep mission scoring isolated per run.
+        this.frictionEngine = new FrictionEngine();
+
         // Use the imported DEVICES config
         const deviceConfig = DEVICES[config.device] || DEVICES.mobile;
         
@@ -203,6 +213,10 @@ class MysteryShopper {
             sessionLogs.console.push(msg.text());
           }
         });
+
+        // Add a "stuck counter"
+        let sameActionCount = 0;
+        let lastActionId = null;
         
         let lastStepDescription = "Start of mission";
         let lastActionTaken = "Navigated to URL";
@@ -214,17 +228,77 @@ class MysteryShopper {
         let stepCount = 0;
         
         const MAX_STEPS = 20; 
+        let milestones = [];
         
         try {
             console.log(`[Shopper] Navigating to target: ${url}`);
+
+            // Block common ad/tracker requests before first paint.
+            const blockedHostFragments = [
+                'googleads.g.doubleclick.net',
+                'doubleclick.net',
+                'googlesyndication.com',
+                'adservice.google.com',
+                'adservice.google.',
+                'adsystem.google.com',
+                'taboola.com',
+                'outbrain.com',
+                'criteo.com',
+                'adnxs.com'
+            ];
+            await page.route('**/*', (route) => {
+                const reqUrl = route.request().url();
+                const resourceType = route.request().resourceType();
+                const shouldBlockByHost = blockedHostFragments.some((fragment) => reqUrl.includes(fragment));
+                const shouldBlockByPattern =
+                    reqUrl.includes('/ads?') ||
+                    reqUrl.includes('adsbygoogle.js') ||
+                    reqUrl.includes('prebid') ||
+                    reqUrl.includes('google_vignette');
+                const shouldBlockResource =
+                    (resourceType === 'script' || resourceType === 'iframe') &&
+                    (shouldBlockByHost || shouldBlockByPattern);
+
+                if (shouldBlockByHost || shouldBlockResource) {
+                    return route.abort();
+                }
+                return route.continue();
+            });
+            console.log('[Shopper] Network ad-block routing enabled.');
+             
             await page.goto(url, { waitUntil: 'domcontentloaded' });
             //await this.enableThrottling(page);
 
+            // This script runs inside the browser and "kills" ads as they appear
+            await page.evaluate(() => {
+                const killAds = () => {
+                    const adSelectors = [
+                        'iframe[id^="aswift"]', 
+                        'iframe[src*="googleads"]', 
+                        'div[id^="google_ads"]',
+                        '.adsbygoogle',
+                        '#dismiss-button' // Common "Close" button for ads
+                    ];
+                    adSelectors.forEach(selector => {
+                        document.querySelectorAll(selector).forEach(el => el.remove());
+                    });
+                    // Remove the "vignette" background that freezes the page
+                    document.body.style.overflow = 'auto';
+                    document.body.classList.remove('google-anno-full-screen');
+                };
+                
+                // Kill ads immediately and then every 1 second
+                killAds();
+                setInterval(killAds, 1000);
+            });
+
         if (!goal || goal === "") { //if no goal entered, ai functions autonmously
             goal = await this.discoverGoal(page);
+        } else if (!this.missionRationale) {
+            this.missionRationale = "Goal was provided manually.";
         }
 
-        const milestones = await this.generateMissionPlan(goal);
+        milestones = await this.generateMissionPlan(goal);
 
             while (!completed && stepCount < MAX_STEPS) {
                 stepCount++;
@@ -237,6 +311,16 @@ class MysteryShopper {
                 const { count, elementMap } = await domUtils.markElements(page);
                 console.log(`   👁️  Vision: Marked ${count} universal elements.`);
 
+                if (stepCount > 1) {
+                    // If we detect a known Google Ad overlay class, try to close it
+                    const isAdVisible = await page.evaluate(() => document.body.classList.contains('google-anno-full-screen'));
+                    if (isAdVisible) {
+                        console.log("⚠️ Ad detected. Attempting to clear...");
+                        await page.keyboard.press('Escape');
+                        await page.waitForTimeout(1000);
+                    }
+                }
+
                 // --- 2. CAPTURE ---
                 const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60 });
                 const base64Image = screenshotBuffer.toString('base64');
@@ -244,6 +328,7 @@ class MysteryShopper {
 
                 // --- 3. ANALYZE (Using external System Prompt) ---
                 const contextData = {
+                    currentUrl: page.url(),
                     lastStepDescription,
                     lastActionTaken,
                     lastActionResult,
@@ -264,15 +349,32 @@ class MysteryShopper {
                     contextData
                 );
 
-                const aiDecision = await this.analyzePage(base64Image, prompt, contextData);
+                const aiDecision = await this.analyzePage(base64Image, prompt);
 
                 if (!aiDecision) {
                     console.log('⚠️ AI glitch. Retrying step...');
                     continue;
                 }
 
+                if (aiDecision.elementId === lastActionId && aiDecision.action === lastActionTaken) {
+                        sameActionCount++;
+                    } else {
+                        sameActionCount = 0;
+                    }
+                    lastActionId = aiDecision.elementId;
+
+                    if (sameActionCount >= 3) {
+                        console.log("🛑 AI is stuck in a loop. Terminating mission.");
+                        this.frictionEngine.logEvent('ai_stuck', {
+                            diagnosis: 'Logic Loop Detected',
+                            severity: 'Critical',
+                            thought: "I've tried the same thing 3 times with no result. The page is likely broken."
+                        });
+                        break; 
+                    }
+
                 // 🚨 REAL-TIME ALERTING CHECK
-                if (aiDecision.reasoning.includes('🚨 ISSUE_FOUND')) {
+                if ((aiDecision.reasoning || '').includes('ISSUE_FOUND')) {
                     console.log("🔥 CRITICAL ISSUE DETECTED IN REAL-TIME!");
                     // Integration note: You can trigger an immediate Slack alert here
                 }
@@ -356,7 +458,12 @@ class MysteryShopper {
         }
 
         const report = this.frictionEngine.getReport();
-        report.videoUrl = `/sessions/${sessionDirName}/recording.webm`;
+        const recordingPath = path.join(sessionPath, 'recording.webm');
+        report.videoUrl = fs.existsSync(recordingPath) ? `/sessions/${sessionDirName}/recording.webm` : null;
+        report.goal = goal; // Pass the goal
+        report.rationale = this.missionRationale || "No rationale captured.";
+        report.milestones = milestones; // Pass the plan
+
         await this.notifier.sendAlert(report, goal, url);
         return report;
     }
@@ -403,12 +510,15 @@ class MysteryShopper {
                 console.log(`   [Action] Clicked element ID: ${decision.elementId}`);
             }
             else if (decision.action === 'type') {
-                await locator.fill(decision.text || '');
-                const tagName = await locator.evaluate(node => node.tagName);
-                if (tagName.toLowerCase() === 'input') {
-                    await page.keyboard.press('Enter');
-                }
-                console.log(`   [Action] Typed text into element ID: ${decision.elementId}`);
+                await locator.click(); // Click first to focus
+                await page.keyboard.down('Control'); // Clear existing text (Select All)
+                await page.keyboard.press('A');
+                await page.keyboard.up('Control');
+                await page.keyboard.press('Backspace');
+                
+                await locator.type(decision.text || '', { delay: 50 }); // Type like a human
+                await page.keyboard.press('Enter');
+                console.log(`   [Action] Human-typed text into element ID: ${decision.elementId}`);
             }
 
             if (decision.action === 'click') {

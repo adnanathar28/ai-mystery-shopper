@@ -121,6 +121,34 @@ function App() {
 
       {report && (
         <div className="results-area">
+          {/* NEW: MISSION BRIEFING CARD */}
+          <div className="mission-briefing-card">
+              <div className="briefing-header">
+                  <span className="ai-badge">AI STRATEGIST</span>
+                  <h2>Mission Briefing</h2>
+              </div>
+              <div className="briefing-content">
+                  <div className="briefing-item">
+                      <label>Objective</label>
+                      <p>{report.goal}</p>
+                  </div>
+                  {report.rationale && (
+                      <div className="briefing-item">
+                          <label>Rationale</label>
+                          <p className="rationale-text">"{report.rationale}"</p>
+                      </div>
+                  )}
+                  <div className="briefing-item">
+                      <label>Planned Milestones</label>
+                      <div className="milestone-chips">
+                          {report.milestones?.map((m, i) => (
+                              <span key={i} className="milestone-chip">{i+1}. {m}</span>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+          </div>
+          
           <div className="score-card">
             <h2>Confusion Score</h2>
             <div className={`score ${report.confusionScore > 60 ? 'bad' : report.confusionScore > 30 ? 'warning' : 'good'}`}>

@@ -56,15 +56,15 @@ class FrictionEngine {
 
       /* 5. Navigation & loop detection */
       if (details.url) {
-        if (index > 0) {
-          const prevUrl = this.events[index - 1].details?.url;
-          if (prevUrl && prevUrl !== details.url) {
-            urlChanged = true;
-          }
+        const prevUrl = index > 0 ? this.events[index - 1].details?.url : null;
+        if (prevUrl && prevUrl !== details.url) {
+          urlChanged = true;
         }
 
-        if (recentUrls.includes(details.url)) {
-          score += 15; // looping penalty
+        // Penalize only when we return to a prior URL (loop),
+        // not when multiple events occur on the same page.
+        if (recentUrls.includes(details.url) && prevUrl && prevUrl !== details.url) {
+          score += 15;
         }
 
         recentUrls.push(details.url);
@@ -95,19 +95,25 @@ class FrictionEngine {
     return "P3 - Minor/Healthy";
   }
 
+// src/frictionEngine.js (Updated getReport method)
+
 getReport() {
     const rawScore = this.calculateScore();
     
-    // CHANGE 1: A "Real Success" only counts if the action is finish AND the diagnosis is Healthy
-    const trulySucceeded = this.events.some(
-      e => e.details?.action === 'finish' && e.details?.diagnosis === 'Healthy'
+    // 1. Determine Mission State
+    const hasFinishAction = this.events.some(e => e.details?.action === 'finish');
+    const hasTerminalFailure = this.events.some(
+      e =>
+        e.details?.diagnosis === 'Stuck' ||
+        e.details?.diagnosis === 'CRITICAL_FAILURE' ||
+        e.details?.severity === 'Critical'
     );
-    
-    // CHANGE 2: Check if the AI officially gave up
+    const trulySucceeded = hasFinishAction && !hasTerminalFailure;
     const gaveUp = this.events.some(e => e.details?.diagnosis === 'Stuck');
 
     let finalScore = rawScore;
 
+    // 2. Score Adjustment Logic
     if (trulySucceeded) {
       const totalFrustration = this.events.reduce((acc, e) => acc + (e.details?.aiFrustrationLevel || 0), 0);
       const avgFrustration = totalFrustration / this.events.length;
@@ -122,30 +128,34 @@ getReport() {
         finalScore = Math.max(rawScore * 0.5, 25 + efficiencyPenalty);
       }
     } else if (gaveUp) {
-      // CHANGE 3: If they gave up, the score should be at least 70 (Critical/Warning)
+      // If the AI gave up, it's at least a 70 (P1/P0 territory)
       finalScore = Math.max(rawScore, 70);
     }
 
-    // --- TOP DIAGNOSIS LOGIC ---
-    const criticalIssues = this.events
-      .filter(e => e.details?.severity === 'Critical' || e.details?.severity === 'High')
-      .map(e => e.details.diagnosis);
+    // 3. ROBUST TOP DIAGNOSIS LOGIC
+    // We want the MOST SEVERE or the LATEST problem found.
+    const issues = this.events
+      .filter(e => e.details?.diagnosis && e.details.diagnosis !== 'Healthy');
 
     let topDiagnosis = 'None';
-    if (criticalIssues.length > 0) {
-      topDiagnosis = criticalIssues[0];
-    } else {
-      const allDiagnoses = this.events
-        .filter(e => e.details?.diagnosis && e.details.diagnosis !== 'Healthy')
-        .map(e => e.details.diagnosis);
-      if (allDiagnoses.length > 0) {
-        topDiagnosis = allDiagnoses[0];
+    
+    if (issues.length > 0) {
+      // Strategy: Prioritize 'Stuck' as it represents the final blocker.
+      const criticalBlocker = issues.find(e => e.details.diagnosis === 'Stuck');
+      if (criticalBlocker) {
+        topDiagnosis = 'Stuck / Mission Failure';
+      } else {
+        // Fallback to the very last issue logged before the mission ended
+        topDiagnosis = issues[issues.length - 1].details.diagnosis;
       }
     }
 
+    const roundedScore = Math.round(Math.min(finalScore, 100));
+
     return {
       totalEvents: this.events.length,
-      confusionScore: Math.round(Math.min(finalScore, 100)),
+      confusionScore: roundedScore,
+      priority: this.calculateSeverity(roundedScore), // Adding the P0/P1/P2 label
       topDiagnosis: topDiagnosis,
       log: this.events
     };

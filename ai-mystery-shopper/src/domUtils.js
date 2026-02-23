@@ -13,7 +13,15 @@ module.exports = {
 
                     const allElements = document.querySelectorAll('div, span, li, img, h1, h2, h3, h4, h5, h6');
                     const pointerItems = Array.from(allElements).filter(el => {
-                        return window.getComputedStyle(el).cursor === 'pointer';
+                            const style = window.getComputedStyle(el);
+                            const hasPointer = style.cursor === 'pointer';
+                            const isVisible = style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+                            
+                            // Ignore tiny "Scroll to Top" buttons often found at the bottom corners
+                            const rect = el.getBoundingClientRect();
+                            const isScrollToTop = rect.bottom > window.innerHeight - 50 && rect.width < 50;
+
+                            return hasPointer && isVisible && !isScrollToTop;
                     });
 
                     const allItems = [...new Set([...semanticItems, ...pointerItems])];

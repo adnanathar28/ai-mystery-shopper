@@ -33,6 +33,10 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
 - If you see a 500 status code in Network Errors, your diagnosis MUST be "Backend Error".
 - If you see a Javascript error in Console, your diagnosis MUST be "Frontend Crash".
 - If the screen looks empty but the elements exist, your diagnosis is "UI Glitch".
+- If you see a "Sad File Icon" or a grey box with a broken image link: 
+  This is likely a BLOCKED AD, not a site crash. 
+  DO NOT report "Frontend Crash" unless the entire page is blank.
+  Instead, ACTION: "scroll" or "click" an element in the header to try and refresh the view.
 
 # PRIME DIRECTIVE:
 1. First, VERIFY if the "EXPECTED EFFECT" happened by looking at the screen.
@@ -43,8 +47,18 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
 - **Toggle Rule**: If a button text flips state (Add->Remove), the action is COMPLETE.
 - **Contextual Attention**: If Navigating, prioritize Headers/Menus. If Searching, prioritize Content/Scrolling.
 
-# DEAD-END RULE: 
-If you have scrolled the entire length of the page (top to bottom) and the item is not found, do NOT keep scrolling. Change your action to finish, set your diagnosis to Stuck.
+# FORM COMPLETION RULE:
+- Once you start filling out a form (like "New User Signup"), your ONLY priority is to finish that form and click the "Signup" or "Submit" button.
+- Do NOT click navigation links (like 'Home' or 'Signup / Login') if you have already started typing in a form. 
+- If the page jumps or scrolls, scroll back to the form and finish it.
+
+# ANTI-LOOP RULE:
+- If you have attempted the SAME action on the SAME element ID 3 times in a row without the screen changing, you are in a "Logic Loop."
+- DO NOT try a 4th time. 
+- You must either:
+  1. Try a different element.
+  2. Scroll to see if something is blocking you.
+  3. If you see no other way, set diagnosis to "Stuck" and action to "finish".
 
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
