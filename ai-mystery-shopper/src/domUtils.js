@@ -44,10 +44,25 @@ module.exports = {
                             if (topElement && (el.contains(topElement) || topElement.contains(el))) {
                                 el.setAttribute('data-ai-id', idCounter);
                                 
-                                let label = el.innerText || el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || el.getAttribute('title') || "Icon";
+                                let label = el.innerText || el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || el.getAttribute('title') || "";
+                                const tagName = el.tagName.toUpperCase();
+                                const inputType = (el.getAttribute('type') || '').toLowerCase();
+                                const idNameHint = `${el.getAttribute('id') || ''} ${el.getAttribute('name') || ''} ${el.getAttribute('placeholder') || ''}`.toLowerCase();
+                                const isSensitiveField =
+                                    inputType === 'password' ||
+                                    inputType === 'tel' ||
+                                    idNameHint.includes('otp') ||
+                                    idNameHint.includes('code') ||
+                                    idNameHint.includes('cvv') ||
+                                    idNameHint.includes('card') ||
+                                    idNameHint.includes('ssn');
+
+                                if (!isSensitiveField && (tagName === 'INPUT' || tagName === 'TEXTAREA') && typeof el.value === 'string' && el.value.trim()) {
+                                    label = `${label ? label + ': ' : ''}${el.value}`;
+                                }
+
+                                if (!label || label.trim().length === 0) label = tagName === 'INPUT' ? "Input Field" : "Icon/Button";
                                 label = label.substring(0, 60).replace(/\n/g, ' ').trim();
-                                
-                                if (label.length === 0 && el.tagName === 'INPUT') label = "Input Field";
                                 
                                 map[idCounter] = `<${el.tagName.toLowerCase()}> ${label}`;
 

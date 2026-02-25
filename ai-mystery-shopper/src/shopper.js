@@ -418,9 +418,28 @@ class MysteryShopper {
                 try {
                     // Clean badges right before interaction to prevent blocking
                     await domUtils.cleanupMarkers(page); 
+                    const preActionUrl = page.url();
                     
                     await this.executeAction(page, aiDecision);
                     lastActionResult = "Success";
+                    
+                    if (aiDecision.action === 'submit') {
+                        const transitioned = await Promise.race([
+                            page.waitForURL((u) => u.toString() !== preActionUrl, { timeout: 8000 }).then(() => true).catch(() => false),
+                            page.locator('text=/account|welcome|logged in|signup|error|invalid/i').first().isVisible({ timeout: 8000 }).then(() => true).catch(() => false)
+                        ]);
+                        if (!transitioned) {
+                            lastActionResult = "FAILED: Submit click did not cause redirect or visible state change";
+                            this.frictionEngine.logEvent('ui_error', {
+                                thought: 'Submit action produced no transition',
+                                aiFrustrationLevel: 7,
+                                diagnosis: 'Submission did not complete',
+                                severity: 'High',
+                                action: 'submit',
+                                url: page.url()
+                            });
+                        }
+                    }
                 } catch (err) {
                     console.log(`   ❌ Action Failed: ${err.message}`);
                     lastActionResult = `FAILED: ${err.message}`;
@@ -484,20 +503,31 @@ class MysteryShopper {
 
     async executeAction(page, decision) {
         if (decision.action === 'scroll') {
-            console.log("   📜 Scrolling page...");
+            console.log("   [Action] Scrolling page...");
             await page.keyboard.press('PageDown');
-            await page.waitForTimeout(1000); 
+            await page.waitForTimeout(1000);
             return;
         }
-        
+
         if (decision.action === 'finish') return;
+
+        if (decision.action === 'submit') {
+            const selector = decision.elementId ? `[data-ai-id="${decision.elementId}"]` : 'button[type="submit"]';
+            const submitLocator = page.locator(
+                'button[type="submit"], input[type="submit"], button:has-text("Sign up"), button:has-text("Signup"), button:has-text("Register"), button:has-text("Create Account"), button:has-text("Login"), a:has-text("Sign up"), a:has-text("Signup")'
+            ).first();
+            await submitLocator.scrollIntoViewIfNeeded();
+            await submitLocator.click({ timeout: 7000 });
+            console.log('   [Action] Explicit submit clicked.');
+            return;
+        }
 
         if (decision.action === 'click' || decision.action === 'type') {
             const selector = `[data-ai-id="${decision.elementId}"]`;
             const locator = page.locator(selector);
-            
-            
+
             if (await locator.count() === 0) throw new Error(`Element #${decision.elementId} not found`);
+            await locator.first().scrollIntoViewIfNeeded();
 
             // Visual feedback: Green outline
             await page.evaluate((sel) => {
@@ -506,23 +536,16 @@ class MysteryShopper {
             }, selector);
 
             if (decision.action === 'click') {
-                await locator.click({ timeout: 5000, force: true });
+                await locator.click({ timeout: 7000 });
                 console.log(`   [Action] Clicked element ID: ${decision.elementId}`);
-            }
-            else if (decision.action === 'type') {
-                await locator.click(); // Click first to focus
-                await page.keyboard.down('Control'); // Clear existing text (Select All)
-                await page.keyboard.press('A');
-                await page.keyboard.up('Control');
-                await page.keyboard.press('Backspace');
-                
-                await locator.type(decision.text || '', { delay: 50 }); // Type like a human
-                await page.keyboard.press('Enter');
-                console.log(`   [Action] Human-typed text into element ID: ${decision.elementId}`);
+            } else if (decision.action === 'type') {
+                // Mobile-safe input: fill directly, do not auto-submit with Enter.
+                await locator.fill(decision.text || '');
+                console.log(`   [Action] Filled text into element ID: ${decision.elementId}`);
             }
 
             if (decision.action === 'click') {
-                await page.waitForTimeout(3000); 
+                await page.waitForTimeout(3000);
             } else {
                 await page.waitForTimeout(1500);
             }
@@ -530,3 +553,4 @@ class MysteryShopper {
     }
 }
 module.exports = MysteryShopper;
+

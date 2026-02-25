@@ -51,6 +51,7 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
 - Once you start filling out a form (like "New User Signup"), your ONLY priority is to finish that form and click the "Signup" or "Submit" button.
 - Do NOT click navigation links (like 'Home' or 'Signup / Login') if you have already started typing in a form. 
 - If the page jumps or scrolls, scroll back to the form and finish it.
+- When form fields are completed and a submit button is visible, use action "submit" (not "type" and not random navigation).
 
 # ANTI-LOOP RULE:
 - If you have attempted the SAME action on the SAME element ID 3 times in a row without the screen changing, you are in a "Logic Loop."
@@ -59,6 +60,8 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
   1. Try a different element.
   2. Scroll to see if something is blocking you.
   3. If you see no other way, set diagnosis to "Stuck" and action to "finish".
+
+"CRITICAL: If you have filled out all fields in a form, your next action MUST be to identify and CLICK the submit/signup button. Do not navigate away or scroll up until you have attempted to submit the form."
 
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
@@ -69,7 +72,7 @@ Follow the PRIME DIRECTIVE to decide your next move.
   "verification_reasoning": "Why?",
   "current_page_description": "1 sentence describing the screen",
   "current_milestone": "Active milestone",
-  "action": "click" | "type" | "scroll" | "finish",
+  "action": "click" | "type" | "scroll" | "submit" | "finish",
   "elementId": number,
   "text": "text (if type)",
   "reasoning": "Why this action? (In character as ${persona.label})",
