@@ -37,11 +37,14 @@ module.exports = {
                             style.display !== 'none' && 
                             style.opacity !== '0') {
                             
+                            const isInsideModal = el.closest('.modal, [role="dialog"], #orderModal'); 
                             const centerX = rect.left + rect.width / 2;
                             const centerY = rect.top + rect.height / 2;
                             const topElement = document.elementFromPoint(centerX, centerY);
 
-                            if (topElement && (el.contains(topElement) || topElement.contains(el))) {
+                            const isVisibleAtPoint = isInsideModal || (topElement && (el.contains(topElement) || topElement.contains(el)));
+
+                            if (isVisibleAtPoint) {
                                 el.setAttribute('data-ai-id', idCounter);
                                 
                                 let label = el.innerText || el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || el.getAttribute('title') || "";

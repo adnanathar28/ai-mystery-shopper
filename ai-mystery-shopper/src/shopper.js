@@ -202,6 +202,7 @@ class MysteryShopper {
 
         const sessionLogs = { errors: [], console: [] };
 
+
         page.on('response', (response) => {
           if (response.status() >= 400) {
             sessionLogs.errors.push(`[${response.status()}] ${response.url()}`);
