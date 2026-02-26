@@ -61,7 +61,13 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
   2. Scroll to see if something is blocking you.
   3. If you see no other way, set diagnosis to "Stuck" and action to "finish".
 
-"CRITICAL: If you have filled out all fields in a form, your next action MUST be to identify and CLICK the submit/signup button. Do not navigate away or scroll up until you have attempted to submit the form."
+"IMPORTANT RULES: 
+1. Use HIGHLY UNIQUE test data. Do NOT use 'John Doe' or 'test@test.com'. 
+Generate a random-looking email like 'user_${Math.random().toString(36).substring(7)}@example.com'.
+2. If you see a red error saying "Email already exist", your NEXT action must be 
+to change the email address to something different.
+3. If you have filled out all fields in a form, your next action MUST be to identify and CLICK the submit/signup button. Do not navigate away or scroll up until you have attempted to submit the form."
+4. Select (ID, option): Use this ONLY for dropdown menus (<select> tags). Provide the text of the option you want to select in the 'option' field."
 
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
@@ -72,7 +78,7 @@ Follow the PRIME DIRECTIVE to decide your next move.
   "verification_reasoning": "Why?",
   "current_page_description": "1 sentence describing the screen",
   "current_milestone": "Active milestone",
-  "action": "click" | "type" | "scroll" | "submit" | "finish",
+  "action": "click" | "type" | "scroll" | "submit" | "finish" | "select",
   "elementId": number,
   "text": "text (if type)",
   "reasoning": "Why this action? (In character as ${persona.label})",

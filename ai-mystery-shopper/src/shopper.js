@@ -227,7 +227,7 @@ class MysteryShopper {
         let completed = false;
         let stepCount = 0;
         
-        const MAX_STEPS = 20; 
+        const MAX_STEPS = 30; 
         let milestones = [];
         
         try {
@@ -299,6 +299,9 @@ class MysteryShopper {
         }
 
         milestones = await this.generateMissionPlan(goal);
+
+        const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
+        const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
 
             while (!completed && stepCount < MAX_STEPS) {
                 stepCount++;
@@ -519,6 +522,19 @@ class MysteryShopper {
             await submitLocator.scrollIntoViewIfNeeded();
             await submitLocator.click({ timeout: 7000 });
             console.log('   [Action] Explicit submit clicked.');
+            return;
+        }
+
+        if (decision.action === 'select') {
+            const selector = `[data-ai-id="${decision.elementId}"]`;
+            const locator = page.locator(selector);
+            
+            // Use selectOption to programmatically set the value
+            // This bypasses the need to "click" the dropdown and "click" the option
+            await locator.selectOption({ label: decision.option || decision.text });
+            
+            console.log(`   [Action] Selected option "${decision.option || decision.text}" for ID: ${decision.elementId}`);
+            await page.waitForTimeout(1000);
             return;
         }
 
