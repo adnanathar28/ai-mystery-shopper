@@ -190,7 +190,6 @@ function App() {
                 <div className="step-content">
                   <p className="thought">"{step.details.thought}"</p>
                   <div className="meta">
-                    <span className="frustration">{step.details.aiFrustrationLevel <= 2 ? 'Status: Smooth' : `Frustration: ${step.details.aiFrustrationLevel}/10`}</span>
                     {step.details.diagnosis && step.details.diagnosis !== "Healthy" && (
                          <span className="frustration" style={{background: '#7f1d1d', color: '#fecaca', marginLeft: '10px'}}>
                             {step.details.diagnosis}
