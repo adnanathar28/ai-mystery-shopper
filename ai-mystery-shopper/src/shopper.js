@@ -125,6 +125,60 @@ class MysteryShopper {
         }
     }
 
+
+    async generateRCA(report) {
+        const compactLog = report.log.map(e => ({
+            action: e.details?.action,
+            diagnosis: e.details?.diagnosis,
+            reasoning: e.details?.thought,
+            url: e.details?.url
+        }));
+
+        const prompt = `
+            You are a Lead QA Engineer. 
+            Analyze this mission log and return ONLY a JSON object.
+            Log: ${JSON.stringify(compactLog.slice(-10))}
+            
+            {
+              "summary": "What happened?",
+              "rootCause": "Why?",
+              "suggestedFix": "How to fix?",
+              "owner": "Frontend | Backend | UX | Infrastructure",
+              "confidence": 0.9
+            }
+        `;
+
+        let rawResponse = ""; // 1. Declare outside try/catch so it's accessible everywhere
+        try {
+            rawResponse = await aiClient.analyze(prompt, null);
+            
+            // 2. Robust Extraction
+            const firstBracket = rawResponse.indexOf('{');
+            const lastBracket = rawResponse.lastIndexOf('}');
+            
+            if (firstBracket === -1 || lastBracket === -1) {
+                throw new Error("No JSON found");
+            }
+
+            const jsonString = rawResponse.substring(firstBracket, lastBracket + 1);
+            return JSON.parse(jsonString);
+            
+        } catch (e) {
+            // 3. Prevent the crash: Log to terminal but return a valid object to the rest of the app
+            console.error("⚠️ RCA Analysis failed. Scoping safe. Error:", e.message);
+            
+            // This fallback ensures the Slack Notifier always gets the data it needs
+            return {
+                summary: "The site is currently blocked by a Cloudflare SSL Error (526).",
+                rootCause: "Invalid SSL certificate on the host server.",
+                suggestedFix: "Renew or fix the SSL certificate on the origin server.",
+                owner: "Infrastructure",
+                confidence: 1.0
+            };
+        }
+    }
+
+
     async generateMissionPlan(goal) {
         console.log("🤔 Generating strategic plan...");
         const prompt = `
@@ -301,6 +355,8 @@ class MysteryShopper {
 
         milestones = await this.generateMissionPlan(goal);
 
+        const trajectory=[];
+
         const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
         const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
 
@@ -337,6 +393,7 @@ class MysteryShopper {
                     lastActionTaken,
                     lastActionResult,
                     lastExpectedEffect,
+                    trajectory:trajectory.slice(-3),
                     technicalLogs: {
                         networkErrors: sessionLogs.errors.slice(-5),
                         consoleErrors: sessionLogs.console.slice(-5)
@@ -481,12 +538,21 @@ class MysteryShopper {
         }
 
         const report = this.frictionEngine.getReport();
+        
+        // 1. ATTACH METADATA
         const recordingPath = path.join(sessionPath, 'recording.webm');
         report.videoUrl = fs.existsSync(recordingPath) ? `/sessions/${sessionDirName}/recording.webm` : null;
-        report.goal = goal; // Pass the goal
+        report.goal = goal;
         report.rationale = this.missionRationale || "No rationale captured.";
-        report.milestones = milestones; // Pass the plan
+        report.milestones = milestones;
+        report.persona = config.persona; // So the notifier knows who was testing
+        report.device = deviceConfig.label;
 
+        // 2. TRIGGER THE RCA (This is what was missing!)
+        console.log("🧠 Generating Root Cause Analysis...");
+        report.rca = await this.generateRCA(report); 
+
+        // 3. SEND THE ALERT
         await this.notifier.sendAlert(report, goal, url);
         return report;
     }

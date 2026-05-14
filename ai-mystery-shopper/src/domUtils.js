@@ -42,6 +42,12 @@ module.exports = {
                             const centerY = rect.top + rect.height / 2;
                             const topElement = document.elementFromPoint(centerX, centerY);
 
+                            const sensitiveFields = document.querySelectorAll('input[type="password"], input[name*="card"], input[name*="ssn"]');
+                            sensitiveFields.forEach(el => {
+                                el.style.filter = 'blur(10px)'; // Blur sensitive data in the screenshot
+                                el.setAttribute('data-ai-sensitive', 'true');
+                            });
+
                             const isVisibleAtPoint = isInsideModal || (topElement && (el.contains(topElement) || topElement.contains(el)));
 
                             if (isVisibleAtPoint) {

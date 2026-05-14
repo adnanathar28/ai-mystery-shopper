@@ -23,6 +23,9 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
 - Network Errors: ${JSON.stringify(history.technicalLogs.networkErrors)}
 - Console Errors: ${JSON.stringify(history.technicalLogs.consoleErrors)}
 
+# RECENT TRAJECTORY (Memory):
+${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${t.reasoning}". Result: ${t.result}`).join('\n')}
+
 # QA INSPECTION RULES:
 1. **Visual Integrity**: Does the page look "broken"? (Overlapping text, buttons cut off, images not loading).
 2. **Interactive Feedback**: When you click, does something happen? If there is a delay > 2 seconds without a spinner, flag it as "Performance Friction".
@@ -68,7 +71,8 @@ Generate a random-looking email like 'user_${Math.random().toString(36).substrin
 to change the email address to something different.
 3. If you have filled out all fields in a form, your next action MUST be to identify and CLICK the submit/signup button. Do not navigate away or scroll up until you have attempted to submit the form."
 4. Select (ID, option): Use this ONLY for dropdown menus (<select> tags). Provide the text of the option you want to select in the 'option' field."
-
+5. If you see the same action failing in your trajectory, DO NOT repeat it. 
+Try a different element, scroll, or change your input data.
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
 

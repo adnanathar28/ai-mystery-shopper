@@ -6,27 +6,29 @@ class Notifier {
         this.webhookUrl = webhookUrl;
     }
 
-    async sendAlert(report, goal, targetUrl) {
-        if (!this.webhookUrl) return console.log("Slack Webhook not configured.");
+        async sendAlert(report, goal, targetUrl) {
+        if (!this.webhookUrl) return;
 
-        const isCritical = report.confusionScore > 50;
-        const color = isCritical ? "#ff4444" : "#36a64f"; //red bad, green good
-        const statusEmoji = isCritical ? "🚨 CRITICAL FRICTION" : "✅ SMOOTH RUN"; //emojis matter in slack
+        const rca = report.rca; // The JSON from generateRCA
+        const isCritical = report.confusionScore >= 50;
+        const color = isCritical ? "#FF0000" : "#2EB67D";
 
-        const message = { //main message
-            attachments: [ //attachment metadata
+        const message = {
+            attachments: [
                 {
                     color: color,
-                    title: `${statusEmoji}: ${targetUrl}`, //color reflects severity and title tells us more details
-                    fields: [ //most imp
-                        { title: "Goal", value: goal, short: false }, //what goal was user trying
-
-                        { title: "Confusion Score", value: `${report.confusionScore}/100`, short: true }, //how bad was it
-                        { title: "Top Diagnosis", value: report.topDiagnosis, short: true }, //ai value:why did it fail
-                        { title: "Steps Taken", value: report.totalEvents.toString(), short: true }, //did the user struggle or fail immidieatly
-                        { title: "Evidence", value: `[Watch Recording](http://localhost:3001${report.videoUrl})`, short: true } //link to video
+                    title: `🚨 Friction Alert: ${report.priority}`,
+                    title_link: targetUrl,
+                    fields: [
+                        { title: "Target URL", value: targetUrl, short: true },
+                        { title: "Assigned Team", value: `*${rca.owner}*`, short: true },
+                        { title: "Executive Summary", value: rca.summary, short: false },
+                        { title: "Root Cause", value: `\`${rca.rootCause}\``, short: false },
+                        { title: "Suggested Fix", value: rca.suggestedFix, short: false },
+                        { title: "Confusion Score", value: `${report.confusionScore}/100`, short: true },
+                        { title: "Steps Taken", value: report.totalEvents, short: true }
                     ],
-                    footer: "Autonomous Mystery Shopper AI",
+                    footer: `Persona: ${report.persona} | Device: ${report.device}`,
                     ts: Math.floor(Date.now() / 1000)
                 }
             ]
