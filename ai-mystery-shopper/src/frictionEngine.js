@@ -23,8 +23,11 @@ class FrictionEngine {
 
       // 🚨 CRITICAL FIX 1: Weight site-wide errors much higher
       // If the AI identifies a Backend Error or Frontend Crash, it's a P0.
-      if (details.diagnosis === 'Backend Error') score += 90; 
-      if (details.diagnosis === 'Frontend Crash') score += 80;
+      if (details.diagnosis === 'Backend Failure') score += 90; 
+      if (details.diagnosis === 'Frontend Failure') score += 80;
+      if (details.diagnosis === 'Missing Route') score += 55;
+      if (details.diagnosis === 'Broken Navigation') score += 45;
+      if (details.diagnosis === 'Dead Link') score += 35;
       if (details.diagnosis === 'Stuck') score += 50;
 
       if (details.severity === 'Critical' || details.diagnosis === 'CRITICAL_FAILURE') {
@@ -56,7 +59,7 @@ class FrictionEngine {
     
     // 🚨 CRITICAL FIX 2: Define what "Terminal Failure" actually means
     // We must include "Backend Error" as a failure, even if the AI clicks 'finish'.
-    const failureDiagnoses = ['Stuck', 'CRITICAL_FAILURE', 'Backend Error', 'Frontend Crash'];
+    const failureDiagnoses = ['Stuck', 'CRITICAL_FAILURE', 'Backend Failure', 'Frontend Failure', 'Missing Route'];
     
     const hasTerminalFailure = this.events.some(e => 
       failureDiagnoses.includes(e.details?.diagnosis) || 
@@ -88,7 +91,7 @@ class FrictionEngine {
     
     if (issues.length > 0) {
       // Pick the most severe diagnosis found in the logs
-      const priorityOrder = ['Backend Error', 'Frontend Crash', 'Stuck', 'UI Glitch'];
+      const priorityOrder = ['Backend Failure', 'Frontend Failure', 'Missing Route', 'Broken Navigation', 'Dead Link', 'Stuck', 'UI Glitch'];
       topDiagnosis = issues.sort((a, b) => {
         return priorityOrder.indexOf(a.details.diagnosis) - priorityOrder.indexOf(b.details.diagnosis);
       })[0].details.diagnosis;

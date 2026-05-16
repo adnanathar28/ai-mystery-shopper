@@ -16,21 +16,23 @@ class AIClient {
 
     async analyze(prompt, base64Image) {
         if (this.provider === 'gemini') {
-            const result = await this.model.generateContent([
-                { text: prompt },
-                { inlineData: { mimeType: "image/jpeg", data: base64Image } }
-            ]);
+            const payload = [{ text: prompt }];
+            if (base64Image) {
+                payload.push({ inlineData: { mimeType: "image/jpeg", data: base64Image } });
+            }
+            const result = await this.model.generateContent(payload);
             return result.response.text();
         } else {
+            const content = [{ type: "text", text: prompt }];
+            if (base64Image) {
+                content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } });
+            }
             const response = await this.openai.chat.completions.create({
                 model: "gpt-4o-mini", // Use 4o-mini for speed/cost (it has vision)
                 messages: [
                     {
                         role: "user",
-                        content: [
-                            { type: "text", text: prompt },
-                            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-                        ],
+                        content,
                     },
                 ],
             });

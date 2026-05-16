@@ -401,6 +401,7 @@ class MysteryShopper {
             let stepCount = 0;
             const MAX_STEPS = 30;
             const trajectory = [];
+            const noChangeCountsByTarget = {};
             const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
             const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
 
@@ -499,21 +500,14 @@ class MysteryShopper {
                     break;
                 }
 
-                this.frictionEngine.logEvent('ai_thought', {
-                    thought: finalDecision.reasoning,
-                    aiFrustrationLevel: finalDecision.frustration_level,
-                    diagnosis: finalDecision.diagnosis,
-                    severity: finalDecision.severity,
-                    action: finalDecision.action,
-                    url: page.url(),
-                    currentMilestone: finalDecision.current_milestone
-                });
-
                 if (finalDecision.verification_verdict === 'VERIFIED_SUCCESS') {
                     console.log('VERIFIED: Previous action worked.');
                 } else {
                     console.log(`VERIFICATION FAILED: ${finalDecision.verification_reasoning}`);
                 }
+                console.log(`Situation: ${finalDecision.current_page_description}`);
+                console.log(`Milestone: ${finalDecision.current_milestone}`);
+                console.log(`Action: ${finalDecision.action} ${finalDecision.elementId ? `(ID ${finalDecision.elementId})` : ''}`);
 
                 lastStepDescription = finalDecision.current_page_description;
                 lastActionTaken = `${finalDecision.action} on ${finalDecision.reasoning}`;
@@ -521,6 +515,18 @@ class MysteryShopper {
                 steps.push({ step: stepCount, ...finalDecision });
 
                 if (finalDecision.action === 'finish') {
+                    this.frictionEngine.logEvent('ai_thought', {
+                        thought: finalDecision.reasoning,
+                        aiFrustrationLevel: finalDecision.frustration_level,
+                        diagnosis: finalDecision.diagnosis,
+                        severity: finalDecision.severity,
+                        action: finalDecision.action,
+                        url: page.url(),
+                        currentMilestone: finalDecision.current_milestone,
+                        expectedEffect: finalDecision.expected_effect,
+                        observedEffect: 'finish action - no execution step',
+                        verificationOutcome: finalDecision.verification_verdict === 'VERIFIED_SUCCESS' ? 'matched' : 'failed'
+                    });
                     trajectory.push({
                         step: stepCount,
                         action: finalDecision.action,
@@ -533,18 +539,42 @@ class MysteryShopper {
                 }
                 if (finalDecision.diagnosis === 'CRITICAL_FAILURE') break;
 
+                let preState = null;
+                let postState = null;
+                let observedEffect = null;
+                let verificationOutcome = 'unknown';
+                let correctedDiagnosis = finalDecision.diagnosis;
+                let correctedSeverity = finalDecision.severity;
+                let toggleChanged = false;
+                let wasToggleTarget = false;
+                let preElementState = null;
+                let postElementState = null;
+                let submitTransitioned = null;
+
                 try {
+                    preState = await this.capturePageState(page);
+                    const preToggle = await this.captureToggleState(page, finalDecision);
+                    wasToggleTarget = preToggle.isToggle;
+                    preElementState = await this.captureElementState(page, finalDecision);
                     await domUtils.cleanupMarkers(page);
                     const preActionUrl = page.url();
                     await this.executeAction(page, finalDecision);
                     lastActionResult = 'Success';
+                    postState = await this.capturePageState(page);
+                    const postToggle = await this.captureToggleState(page, finalDecision);
+                    postElementState = await this.captureElementState(page, finalDecision);
+                    toggleChanged = preToggle.isToggle && preToggle.exists && postToggle.exists && preToggle.signature !== postToggle.signature;
+                    observedEffect = this.buildObservedEffect(preState, postState, { toggleChanged });
+                    verificationOutcome = this.verifyActionOutcome(finalDecision, preElementState, postElementState, observedEffect, null);
+                    correctedDiagnosis = this.correctDiagnosis(finalDecision, observedEffect, sessionLogs, noChangeCountsByTarget, wasToggleTarget);
 
                     if (finalDecision.action === 'submit') {
-                        const transitioned = await Promise.race([
+                        submitTransitioned = await Promise.race([
                             page.waitForURL((u) => u.toString() !== preActionUrl, { timeout: 8000 }).then(() => true).catch(() => false),
                             page.locator('text=/account|welcome|logged in|signup|error|invalid/i').first().isVisible({ timeout: 8000 }).then(() => true).catch(() => false)
                         ]);
-                        if (!transitioned) {
+                        verificationOutcome = this.verifyActionOutcome(finalDecision, preElementState, postElementState, observedEffect, submitTransitioned);
+                        if (!submitTransitioned) {
                             lastActionResult = 'FAILED: Submit click did not cause redirect or visible state change';
                             this.frictionEngine.logEvent('ui_error', {
                                 thought: 'Submit action produced no transition',
@@ -554,6 +584,7 @@ class MysteryShopper {
                                 action: 'submit',
                                 url: page.url()
                             });
+                            verificationOutcome = 'failed';
                         }
                     }
 
@@ -566,6 +597,11 @@ class MysteryShopper {
                 } catch (err) {
                     console.log(`   Action Failed: ${err.message}`);
                     lastActionResult = `FAILED: ${err.message}`;
+                    postState = await this.capturePageState(page).catch(() => null);
+                    observedEffect = this.buildObservedEffect(preState, postState, { toggleChanged: false });
+                    postElementState = await this.captureElementState(page, finalDecision).catch(() => null);
+                    verificationOutcome = 'failed';
+                    correctedDiagnosis = this.correctDiagnosis(finalDecision, observedEffect, sessionLogs, noChangeCountsByTarget, wasToggleTarget);
                     this.frictionEngine.logEvent('ui_error', {
                         thought: `Interaction failed: ${err.message}`,
                         aiFrustrationLevel: 8,
@@ -587,6 +623,25 @@ class MysteryShopper {
                         result: lastActionResult
                     });
                 }
+
+                if (correctedDiagnosis === 'Backend Failure' || correctedDiagnosis === 'Frontend Failure' || correctedDiagnosis === 'Missing Route') {
+                    correctedSeverity = 'High';
+                } else if (correctedDiagnosis === 'Broken Navigation' || correctedDiagnosis === 'Dead Link') {
+                    correctedSeverity = correctedSeverity === 'None' ? 'Medium' : correctedSeverity;
+                }
+
+                this.frictionEngine.logEvent('ai_thought', {
+                    thought: finalDecision.reasoning,
+                    aiFrustrationLevel: finalDecision.frustration_level,
+                    diagnosis: correctedDiagnosis,
+                    severity: correctedSeverity,
+                    action: finalDecision.action,
+                    url: page.url(),
+                    currentMilestone: finalDecision.current_milestone,
+                    expectedEffect: finalDecision.expected_effect,
+                    observedEffect: observedEffect ? observedEffect.summary : 'unknown',
+                    verificationOutcome
+                });
             }
             }
         } catch (error) {
@@ -645,6 +700,186 @@ class MysteryShopper {
         }
         return report;
     }
+
+    async capturePageState(page) {
+        const url = page.url();
+        const data = await page.evaluate(() => {
+            const visibleInputs = Array.from(document.querySelectorAll('input, textarea, select')).filter((el) => {
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+            }).length;
+
+            const modalAppeared = !!document.querySelector('[role="dialog"], .modal, [aria-modal="true"]');
+            const textSample = (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+            return { visibleInputs, modalAppeared, textSample };
+        });
+
+        const contentHash = this.simpleHash(data.textSample);
+        return {
+            url,
+            visibleInputs: data.visibleInputs,
+            modalAppeared: data.modalAppeared,
+            contentHash
+        };
+    }
+
+    simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = ((hash << 5) - hash) + str.charCodeAt(i);
+            hash |= 0;
+        }
+        return hash;
+    }
+
+    buildObservedEffect(preState, postState, extra = {}) {
+        if (!preState || !postState) {
+            return {
+                urlChanged: false,
+                modalChanged: false,
+                inputCountChanged: false,
+                contentHashChanged: false,
+                toggleChanged: !!extra.toggleChanged,
+                anyChange: false,
+                summary: 'state capture unavailable'
+            };
+        }
+
+        const urlChanged = preState.url !== postState.url;
+        const modalChanged = preState.modalAppeared !== postState.modalAppeared;
+        const inputCountChanged = preState.visibleInputs !== postState.visibleInputs;
+        const contentHashChanged = preState.contentHash !== postState.contentHash;
+        const toggleChanged = !!extra.toggleChanged;
+        const anyChange = urlChanged || modalChanged || inputCountChanged || contentHashChanged || toggleChanged;
+
+        return {
+            urlChanged,
+            modalChanged,
+            inputCountChanged,
+            contentHashChanged,
+            toggleChanged,
+            anyChange,
+            summary: `urlChanged=${urlChanged}, modalChanged=${modalChanged}, inputCountChanged=${inputCountChanged}, contentChanged=${contentHashChanged}, toggleChanged=${toggleChanged}`
+        };
+    }
+
+    async captureElementState(page, decision) {
+        if (!decision || decision.elementId === undefined || decision.elementId === null) return null;
+        const locator = page.locator(`[data-ai-id="${decision.elementId}"]`).first();
+        const exists = (await locator.count()) > 0;
+        if (!exists) return null;
+        return await locator.evaluate((el) => {
+            const tag = el.tagName.toLowerCase();
+            const type = (el.getAttribute('type') || '').toLowerCase();
+            const role = (el.getAttribute('role') || '').toLowerCase();
+            const isToggle = (tag === 'input' && (type === 'checkbox' || type === 'radio')) || role === 'switch' || role === 'checkbox';
+            return {
+                tag,
+                type,
+                role,
+                value: typeof el.value === 'string' ? el.value : '',
+                checked: !!el.checked,
+                ariaChecked: el.getAttribute('aria-checked') || '',
+                isToggle
+            };
+        }).catch(() => null);
+    }
+
+    verifyActionOutcome(decision, preElementState, postElementState, observedEffect, submitTransitioned) {
+        if (!decision) return 'failed';
+
+        if (decision.action === 'click') {
+            if (preElementState?.isToggle && postElementState?.isToggle) {
+                const toggled = preElementState.checked !== postElementState.checked ||
+                    preElementState.ariaChecked !== postElementState.ariaChecked;
+                return toggled ? 'matched' : 'failed';
+            }
+            return observedEffect?.anyChange ? 'matched' : 'failed';
+        }
+
+        if (decision.action === 'type') {
+            if (postElementState && typeof decision.text === 'string') {
+                return postElementState.value === decision.text ? 'matched' : (observedEffect?.anyChange ? 'matched' : 'failed');
+            }
+            return observedEffect?.anyChange ? 'matched' : 'failed';
+        }
+
+        if (decision.action === 'select') {
+            if (preElementState && postElementState) {
+                return preElementState.value !== postElementState.value ? 'matched' : 'failed';
+            }
+            return observedEffect?.anyChange ? 'matched' : 'failed';
+        }
+
+        if (decision.action === 'submit') {
+            return submitTransitioned ? 'matched' : 'failed';
+        }
+
+        if (decision.action === 'scroll' || decision.action === 'finish') {
+            return 'matched';
+        }
+
+        return observedEffect?.anyChange ? 'matched' : 'failed';
+    }
+
+    async captureToggleState(page, decision) {
+        if (!decision || decision.elementId === undefined || decision.elementId === null) {
+            return { isToggle: false, exists: false, signature: null };
+        }
+
+        const locator = page.locator(`[data-ai-id="${decision.elementId}"]`).first();
+        const exists = (await locator.count()) > 0;
+        if (!exists) return { isToggle: false, exists: false, signature: null };
+
+        const state = await locator.evaluate((el) => {
+            const tag = el.tagName.toLowerCase();
+            const type = (el.getAttribute('type') || '').toLowerCase();
+            const role = (el.getAttribute('role') || '').toLowerCase();
+            const isToggle = (tag === 'input' && (type === 'checkbox' || type === 'radio')) || role === 'switch' || role === 'checkbox';
+            const checked = !!el.checked;
+            const ariaChecked = el.getAttribute('aria-checked') || '';
+            const className = el.className || '';
+            return {
+                isToggle,
+                signature: `${checked}|${ariaChecked}|${className}`
+            };
+        }).catch(() => ({ isToggle: false, signature: null }));
+
+        return { isToggle: state.isToggle, exists: true, signature: state.signature };
+    }
+
+    correctDiagnosis(decision, observedEffect, sessionLogs, noChangeCountsByTarget, wasToggleTarget) {
+        const latestNetworkErrors = sessionLogs.errors.slice(-5);
+        const latestConsoleErrors = sessionLogs.console.slice(-5);
+        const has404 = latestNetworkErrors.some((e) => e.includes('[404]'));
+        const has5xx = latestNetworkErrors.some((e) => /\[(5\d\d)\]/.test(e));
+        const hasSevereConsoleError = latestConsoleErrors.some((e) =>
+            /(typeerror|referenceerror|syntaxerror|unhandled|cannot read|is not a function|failed to fetch)/i.test(e)
+        );
+        const targetKey = `${decision.action}:${decision.elementId ?? 'none'}`;
+        const noChangeForDeadLink = !observedEffect.anyChange && ['click', 'submit'].includes(decision.action);
+
+        if (noChangeForDeadLink && !wasToggleTarget) {
+            noChangeCountsByTarget[targetKey] = (noChangeCountsByTarget[targetKey] || 0) + 1;
+        } else {
+            noChangeCountsByTarget[targetKey] = 0;
+        }
+
+        if (hasSevereConsoleError) return 'Frontend Failure';
+        if (has5xx) return 'Backend Failure';
+
+        if (has404) {
+            return observedEffect.anyChange ? 'Missing Route' : 'Dead Link';
+        }
+
+        if (!wasToggleTarget && noChangeCountsByTarget[targetKey] >= 2 && ['click', 'submit'].includes(decision.action)) {
+            return 'Dead Link';
+        }
+
+        return decision.diagnosis;
+    }
+
     async analyzePage(base64Image, prompt) {
         const maxAttempts = 3;
 
