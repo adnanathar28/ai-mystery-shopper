@@ -8,6 +8,8 @@ const aiClient = require('./aiClient');
 const domUtils = require('./domUtils'); 
 const systemPrompt = require('./prompts/systemPrompt'); // IMPORTED
 const DEVICES = require('./config/devices'); // IMPORTED
+const { AIDecisionSchema, normalizeDecisionShape } = require('./schemas/aiDecisionSchema');
+const { sanitizeDecision } = require('./decisionSanitizer');
 
 const USER_DATA_DIR = path.join(__dirname, '../public/user_data');
 
@@ -453,12 +455,39 @@ class MysteryShopper {
                     continue;
                 }
 
-                if (aiDecision.elementId === lastActionId && aiDecision.action === lastActionTaken) {
+                const sanitizeResult = await sanitizeDecision(page, aiDecision);
+                let finalDecision = aiDecision;
+                if (sanitizeResult.ok && sanitizeResult.repaired) {
+                    finalDecision = sanitizeResult.decision;
+                    this.frictionEngine.logEvent('decision_repaired', {
+                        thought: sanitizeResult.reason,
+                        action: aiDecision.action,
+                        repairedAction: finalDecision.action,
+                        originalElementId: aiDecision.elementId,
+                        repairedElementId: finalDecision.elementId,
+                        url: page.url(),
+                        severity: 'Low',
+                        diagnosis: 'Healthy'
+                    });
+                } else if (!sanitizeResult.ok) {
+                    finalDecision = sanitizeResult.fallbackDecision;
+                    this.frictionEngine.logEvent('decision_rejected', {
+                        thought: sanitizeResult.reason,
+                        action: aiDecision.action,
+                        fallbackAction: finalDecision.action,
+                        originalElementId: aiDecision.elementId,
+                        url: page.url(),
+                        severity: 'Medium',
+                        diagnosis: 'Stuck'
+                    });
+                }
+
+                if (finalDecision.elementId === lastActionId && finalDecision.action === lastActionTaken) {
                     sameActionCount++;
                 } else {
                     sameActionCount = 0;
                 }
-                lastActionId = aiDecision.elementId;
+                lastActionId = finalDecision.elementId;
 
                 if (sameActionCount >= 3) {
                     console.log('AI is stuck in a loop. Terminating mission.');
@@ -471,46 +500,46 @@ class MysteryShopper {
                 }
 
                 this.frictionEngine.logEvent('ai_thought', {
-                    thought: aiDecision.reasoning,
-                    aiFrustrationLevel: aiDecision.frustration_level,
-                    diagnosis: aiDecision.diagnosis,
-                    severity: aiDecision.severity,
-                    action: aiDecision.action,
+                    thought: finalDecision.reasoning,
+                    aiFrustrationLevel: finalDecision.frustration_level,
+                    diagnosis: finalDecision.diagnosis,
+                    severity: finalDecision.severity,
+                    action: finalDecision.action,
                     url: page.url(),
-                    currentMilestone: aiDecision.current_milestone
+                    currentMilestone: finalDecision.current_milestone
                 });
 
-                if (aiDecision.verification_verdict === 'VERIFIED_SUCCESS') {
+                if (finalDecision.verification_verdict === 'VERIFIED_SUCCESS') {
                     console.log('VERIFIED: Previous action worked.');
                 } else {
-                    console.log(`VERIFICATION FAILED: ${aiDecision.verification_reasoning}`);
+                    console.log(`VERIFICATION FAILED: ${finalDecision.verification_reasoning}`);
                 }
 
-                lastStepDescription = aiDecision.current_page_description;
-                lastActionTaken = `${aiDecision.action} on ${aiDecision.reasoning}`;
-                lastExpectedEffect = aiDecision.expected_effect;
-                steps.push({ step: stepCount, ...aiDecision });
+                lastStepDescription = finalDecision.current_page_description;
+                lastActionTaken = `${finalDecision.action} on ${finalDecision.reasoning}`;
+                lastExpectedEffect = finalDecision.expected_effect;
+                steps.push({ step: stepCount, ...finalDecision });
 
-                if (aiDecision.action === 'finish') {
+                if (finalDecision.action === 'finish') {
                     trajectory.push({
                         step: stepCount,
-                        action: aiDecision.action,
-                        reasoning: aiDecision.reasoning || 'Mission ended by AI decision.',
+                        action: finalDecision.action,
+                        reasoning: finalDecision.reasoning || 'Mission ended by AI decision.',
                         result: 'Mission terminated by agent.'
                     });
                     completed = true;
                     this.frictionEngine.logEvent('action_finish', { action: 'finish' });
                     break;
                 }
-                if (aiDecision.diagnosis === 'CRITICAL_FAILURE') break;
+                if (finalDecision.diagnosis === 'CRITICAL_FAILURE') break;
 
                 try {
                     await domUtils.cleanupMarkers(page);
                     const preActionUrl = page.url();
-                    await this.executeAction(page, aiDecision);
+                    await this.executeAction(page, finalDecision);
                     lastActionResult = 'Success';
 
-                    if (aiDecision.action === 'submit') {
+                    if (finalDecision.action === 'submit') {
                         const transitioned = await Promise.race([
                             page.waitForURL((u) => u.toString() !== preActionUrl, { timeout: 8000 }).then(() => true).catch(() => false),
                             page.locator('text=/account|welcome|logged in|signup|error|invalid/i').first().isVisible({ timeout: 8000 }).then(() => true).catch(() => false)
@@ -530,8 +559,8 @@ class MysteryShopper {
 
                     trajectory.push({
                         step: stepCount,
-                        action: aiDecision.action,
-                        reasoning: aiDecision.reasoning || 'No reasoning provided.',
+                        action: finalDecision.action,
+                        reasoning: finalDecision.reasoning || 'No reasoning provided.',
                         result: lastActionResult
                     });
                 } catch (err) {
@@ -542,7 +571,7 @@ class MysteryShopper {
                         aiFrustrationLevel: 8,
                         diagnosis: 'UI Interaction Failed',
                         severity: 'Medium',
-                        action: aiDecision.action,
+                        action: finalDecision.action,
                         url: page.url()
                     });
 
@@ -553,8 +582,8 @@ class MysteryShopper {
 
                     trajectory.push({
                         step: stepCount,
-                        action: aiDecision.action,
-                        reasoning: aiDecision.reasoning || 'No reasoning provided.',
+                        action: finalDecision.action,
+                        reasoning: finalDecision.reasoning || 'No reasoning provided.',
                         result: lastActionResult
                     });
                 }
@@ -617,16 +646,46 @@ class MysteryShopper {
         return report;
     }
     async analyzePage(base64Image, prompt) {
-        try {
-            let textResponse = await aiClient.analyze(prompt, base64Image);
-            let cleanedText = textResponse.replace(/```json|```/g, '').trim();
-            const firstBracket = cleanedText.indexOf('{');
-            const lastBracket = cleanedText.lastIndexOf('}');
-            if (firstBracket === -1) return null;
-            return JSON.parse(cleanedText.substring(firstBracket, lastBracket + 1));
-        } catch (e) {
-            console.error("[Shopper] AI Analysis failed:", e.message);
-            return null;
+        const maxAttempts = 3;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const textResponse = await aiClient.analyze(prompt, base64Image);
+                const cleanedText = textResponse.replace(/```json|```/g, '').trim();
+                const firstBracket = cleanedText.indexOf('{');
+                const lastBracket = cleanedText.lastIndexOf('}');
+                if (firstBracket === -1 || lastBracket === -1) {
+                    throw new Error('No JSON object found in model response');
+                }
+
+                const raw = JSON.parse(cleanedText.substring(firstBracket, lastBracket + 1));
+                const normalized = normalizeDecisionShape(raw);
+                const parsed = AIDecisionSchema.safeParse(normalized);
+
+                if (parsed.success) {
+                    return parsed.data;
+                }
+
+                const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+                throw new Error(`Schema validation failed: ${issues}`);
+            } catch (e) {
+                console.error(`[Shopper] AI Analysis attempt ${attempt}/${maxAttempts} failed:`, e.message);
+                if (attempt === maxAttempts) {
+                    return {
+                        verification_verdict: 'VERIFICATION_FAILED',
+                        verification_reasoning: 'Model response was invalid after retries.',
+                        current_page_description: 'Agent could not parse a valid model decision.',
+                        current_milestone: 'Recovery',
+                        action: 'scroll',
+                        reasoning: 'Applying deterministic fallback to recover from invalid AI output.',
+                        expected_effect: 'Reveal more context and retry on next step.',
+                        frustration_level: 6,
+                        diagnosis: 'Stuck',
+                        severity: 'Medium',
+                        text: ''
+                    };
+                }
+            }
         }
     }
 
@@ -697,4 +756,3 @@ class MysteryShopper {
 
 
 module.exports = MysteryShopper;
-
