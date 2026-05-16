@@ -164,16 +164,26 @@ class MysteryShopper {
             return JSON.parse(jsonString);
             
         } catch (e) {
-            // 3. Prevent the crash: Log to terminal but return a valid object to the rest of the app
-            console.error("⚠️ RCA Analysis failed. Scoping safe. Error:", e.message);
+            console.error("⚠️ RCA Analysis failed. Error:", e.message);
             
-            // This fallback ensures the Slack Notifier always gets the data it needs
+            // If the score is low, the fallback should be "Success"
+            if (report.confusionScore < 20) {
+                return {
+                    summary: "The mission completed successfully with no significant friction detected.",
+                    rootCause: "None detected.",
+                    suggestedFix: "No action required.",
+                    owner: "None",
+                    confidence: 1.0
+                };
+            }
+
+            // If the score is high, use a generic "Failure" fallback
             return {
-                summary: "The site is currently blocked by a Cloudflare SSL Error (526).",
-                rootCause: "Invalid SSL certificate on the host server.",
-                suggestedFix: "Renew or fix the SSL certificate on the origin server.",
-                owner: "Infrastructure",
-                confidence: 1.0
+                summary: "The AI detected friction but failed to summarize the root cause.",
+                rootCause: this.lastSystemError || "Unknown interaction or navigation error.",
+                suggestedFix: "Review the session recording to identify the blocker.",
+                owner: "Engineering",
+                confidence: 0
             };
         }
     }
@@ -402,7 +412,7 @@ class MysteryShopper {
 
                 // Generate prompt using the new Persona logic
                 const prompt = systemPrompt(
-                    goal, 
+                    dynamicGoal, 
                     milestones, 
                     elementMap, 
                     config.persona, 
@@ -469,6 +479,12 @@ class MysteryShopper {
                 steps.push({ step: stepCount, ...aiDecision });
 
                 if (aiDecision.action === 'finish') {
+                    trajectory.push({
+                        step: stepCount,
+                        action: aiDecision.action,
+                        reasoning: aiDecision.reasoning || "Mission ended by AI decision.",
+                        result: "Mission terminated by agent."
+                    });
                     completed = true;
                     this.frictionEngine.logEvent('action_finish', { action: 'finish' });
                     break;
@@ -501,6 +517,13 @@ class MysteryShopper {
                             });
                         }
                     }
+
+                    trajectory.push({
+                        step: stepCount,
+                        action: aiDecision.action,
+                        reasoning: aiDecision.reasoning || "No reasoning provided.",
+                        result: lastActionResult
+                    });
                 } catch (err) {
                     console.log(`   ❌ Action Failed: ${err.message}`);
                     lastActionResult = `FAILED: ${err.message}`;
@@ -518,6 +541,13 @@ class MysteryShopper {
                         if (!page.isClosed()) await page.keyboard.press('Escape'); 
                     }
                     if (err.message.includes('Target page, context or browser has been closed')) break; 
+
+                    trajectory.push({
+                        step: stepCount,
+                        action: aiDecision.action,
+                        reasoning: aiDecision.reasoning || "No reasoning provided.",
+                        result: lastActionResult
+                    });
                 }
             }
         } catch (error) {
