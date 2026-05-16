@@ -223,82 +223,114 @@ class MysteryShopper {
     }
 
     async runMission(url, goal, config={persona: 'first_time_user', device: 'mobile'}) {
-        // Keep mission scoring isolated per run.
         this.frictionEngine = new FrictionEngine();
+        this.missionRationale = null;
 
-        // Use the imported DEVICES config
         const deviceConfig = DEVICES[config.device] || DEVICES.mobile;
-        
         const timestamp = Date.now();
         const sessionDirName = `session-${timestamp}`;
         const sessionPath = path.join(__dirname, '../public/sessions', sessionDirName);
 
-        fs.mkdirSync(sessionPath, { recursive: true });
-
-        // 1. INJECT PREFERENCES BEFORE BROWSER START
-        this.preloadPreferences();
-
-        console.log(`[Shopper] Launching Agent as ${config.persona} on ${deviceConfig.label}...`);
-
-        const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
-            ...deviceConfig.settings, // Use settings from config/devices.js
-            headless: false,
-            channel: 'chrome',
-            // Stealth Mode args
-            ignoreDefaultArgs: ['--enable-automation'], 
-            args: [ //makes it hard to detect as a bot
-                '--disable-blink-features=AutomationControlled',
-                '--no-sandbox',
-                '--disable-infobars',
-                '--start-maximized',
-                '--no-first-run',
-                '--disable-session-crashed-bubble',
-                '--disable-popup-blocking',
-                '--disable-save-password-bubble',
-                '--password-store=basic',
-                '--deny-permission-prompts',
-                '--disable-notifications'
-            ],
-            recordVideo: { dir: sessionPath, size: { width: 390, height: 844 } },
-        });
-
-        const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
-
+        let context;
+        let page;
+        let milestones = [];
+        let infraFailure = null;
         const sessionLogs = { errors: [], console: [] };
 
+        if (url && !url.startsWith('http')) {
+            url = `https://${url}`;
+        }
 
-        page.on('response', (response) => {
-          if (response.status() >= 400) {
-            sessionLogs.errors.push(`[${response.status()}] ${response.url()}`);
-          }
-        });
-
-        page.on('console', (msg) => {
-          if (msg.type() === 'error') {
-            sessionLogs.console.push(msg.text());
-          }
-        });
-
-        // Add a "stuck counter"
-        let sameActionCount = 0;
-        let lastActionId = null;
-        
-        let lastStepDescription = "Start of mission";
-        let lastActionTaken = "Navigated to URL";
-        let lastActionResult = "Success"; 
-        let lastExpectedEffect = "Page should load";
-        
-        const steps = [];
-        let completed = false;
-        let stepCount = 0;
-        
-        const MAX_STEPS = 30; 
-        let milestones = [];
-        
         try {
+            fs.mkdirSync(sessionPath, { recursive: true });
+            this.preloadPreferences();
+
+            console.log(`[Shopper] Launching Agent as ${config.persona} on ${deviceConfig.label}...`);
+            context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+                ...deviceConfig.settings,
+                headless: false,
+                channel: 'chrome',
+                ignoreDefaultArgs: ['--enable-automation'],
+                args: [
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-sandbox',
+                    '--disable-infobars',
+                    '--start-maximized',
+                    '--no-first-run',
+                    '--disable-session-crashed-bubble',
+                    '--disable-popup-blocking',
+                    '--disable-save-password-bubble',
+                    '--password-store=basic',
+                    '--deny-permission-prompts',
+                    '--disable-notifications'
+                ],
+                recordVideo: { dir: sessionPath, size: { width: 390, height: 844 } },
+            });
+
+            page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+
+            page.on('response', (response) => {
+                if (response.status() >= 400) {
+                    sessionLogs.errors.push(`[${response.status()}] ${response.url()}`);
+                }
+            });
+
+            page.on('console', (msg) => {
+                if (msg.type() === 'error') {
+                    sessionLogs.console.push(msg.text());
+                }
+            });
+
             console.log(`[Shopper] Navigating to target: ${url}`);
 
-            // Block common ad/tracker requests before first paint.
+            let preflightResponse = null;
+            try {
+                preflightResponse = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            } catch (navErr) {
+                const msg = navErr?.message || 'Navigation failed';
+                if (
+                    msg.includes('ERR_CERT') ||
+                    msg.includes('SSL') ||
+                    msg.includes('NAME_NOT_RESOLVED') ||
+                    msg.includes('net::ERR') ||
+                    msg.includes('Timeout')
+                ) {
+                    infraFailure = `Navigation failure: ${msg}`;
+                } else {
+                    throw navErr;
+                }
+            }
+
+            if (!infraFailure) {
+                if (!preflightResponse) {
+                    infraFailure = 'No response received during navigation';
+                } else if (preflightResponse.status() >= 400) {
+                    infraFailure = `HTTP ${preflightResponse.status()}`;
+                } else {
+                    const title = (await page.title()).toLowerCase();
+                    if (
+                        title.includes('privacy error') ||
+                        title.includes('not found') ||
+                        title.includes('invalid ssl') ||
+                        title.includes("this site can\'t be reached") ||
+                        title.includes("this site can�t be reached")
+                    ) {
+                        infraFailure = `Blocked by browser/title check: "${title}"`;
+                    }
+                }
+            }
+
+            if (infraFailure) {
+                goal = 'Site Unreachable';
+                milestones = ['N/A'];
+                this.missionRationale = `Preflight aborted mission: ${infraFailure}`;
+                this.frictionEngine.logEvent('ui_error', {
+                    diagnosis: 'INFRASTRUCTURE_FAILURE',
+                    severity: 'Critical',
+                    thought: infraFailure,
+                    url
+                });
+            } else {
             const blockedHostFragments = [
                 'googleads.g.doubleclick.net',
                 'doubleclick.net',
@@ -324,133 +356,120 @@ class MysteryShopper {
                     (resourceType === 'script' || resourceType === 'iframe') &&
                     (shouldBlockByHost || shouldBlockByPattern);
 
-                if (shouldBlockByHost || shouldBlockResource) {
-                    return route.abort();
-                }
+                if (shouldBlockByHost || shouldBlockResource) return route.abort();
                 return route.continue();
             });
             console.log('[Shopper] Network ad-block routing enabled.');
-             
-            await page.goto(url, { waitUntil: 'domcontentloaded' });
-            //await this.enableThrottling(page);
 
-            // This script runs inside the browser and "kills" ads as they appear
             await page.evaluate(() => {
                 const killAds = () => {
                     const adSelectors = [
-                        'iframe[id^="aswift"]', 
-                        'iframe[src*="googleads"]', 
+                        'iframe[id^="aswift"]',
+                        'iframe[src*="googleads"]',
                         'div[id^="google_ads"]',
                         '.adsbygoogle',
-                        '#dismiss-button' // Common "Close" button for ads
+                        '#dismiss-button'
                     ];
-                    adSelectors.forEach(selector => {
-                        document.querySelectorAll(selector).forEach(el => el.remove());
+                    adSelectors.forEach((selector) => {
+                        document.querySelectorAll(selector).forEach((el) => el.remove());
                     });
-                    // Remove the "vignette" background that freezes the page
                     document.body.style.overflow = 'auto';
                     document.body.classList.remove('google-anno-full-screen');
                 };
-                
-                // Kill ads immediately and then every 1 second
                 killAds();
                 setInterval(killAds, 1000);
             });
 
-        if (!goal || goal === "") { //if no goal entered, ai functions autonmously
-            goal = await this.discoverGoal(page);
-        } else if (!this.missionRationale) {
-            this.missionRationale = "Goal was provided manually.";
-        }
+            if (!goal || goal === '') {
+                goal = await this.discoverGoal(page);
+            } else if (!this.missionRationale) {
+                this.missionRationale = 'Goal was provided manually.';
+            }
 
-        milestones = await this.generateMissionPlan(goal);
+            milestones = await this.generateMissionPlan(goal);
 
-        const trajectory=[];
-
-        const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
-        const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
+            let sameActionCount = 0;
+            let lastActionId = null;
+            let lastStepDescription = 'Start of mission';
+            let lastActionTaken = 'Navigated to URL';
+            let lastActionResult = 'Success';
+            let lastExpectedEffect = 'Page should load';
+            const steps = [];
+            let completed = false;
+            let stepCount = 0;
+            const MAX_STEPS = 30;
+            const trajectory = [];
+            const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
+            const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
 
             while (!completed && stepCount < MAX_STEPS) {
                 stepCount++;
                 console.log(`\n--- Step ${stepCount} ---`);
-                
-                try { await page.waitForLoadState('networkidle', { timeout: 3000 }); } catch(e) {}
+
+                try { await page.waitForLoadState('networkidle', { timeout: 3000 }); } catch (e) {}
                 await page.waitForTimeout(1000);
 
-                // --- 1. VISION (Using domUtils) ---
                 const { count, elementMap } = await domUtils.markElements(page);
-                console.log(`   👁️  Vision: Marked ${count} universal elements.`);
+                console.log(`   Vision: Marked ${count} universal elements.`);
 
                 if (stepCount > 1) {
-                    // If we detect a known Google Ad overlay class, try to close it
                     const isAdVisible = await page.evaluate(() => document.body.classList.contains('google-anno-full-screen'));
                     if (isAdVisible) {
-                        console.log("⚠️ Ad detected. Attempting to clear...");
+                        console.log('Ad detected. Attempting to clear...');
                         await page.keyboard.press('Escape');
                         await page.waitForTimeout(1000);
                     }
                 }
 
-                // --- 2. CAPTURE ---
                 const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60 });
                 const base64Image = screenshotBuffer.toString('base64');
                 fs.writeFileSync(path.join(sessionPath, `step-${stepCount}.jpg`), screenshotBuffer);
 
-                // --- 3. ANALYZE (Using external System Prompt) ---
                 const contextData = {
                     currentUrl: page.url(),
                     lastStepDescription,
                     lastActionTaken,
                     lastActionResult,
                     lastExpectedEffect,
-                    trajectory:trajectory.slice(-3),
+                    trajectory: trajectory.slice(-3),
                     technicalLogs: {
                         networkErrors: sessionLogs.errors.slice(-5),
                         consoleErrors: sessionLogs.console.slice(-5)
                     }
                 };
 
-                // Generate prompt using the new Persona logic
                 const prompt = systemPrompt(
-                    dynamicGoal, 
-                    milestones, 
-                    elementMap, 
-                    config.persona, 
-                    deviceConfig.label, 
+                    dynamicGoal,
+                    milestones,
+                    elementMap,
+                    config.persona,
+                    deviceConfig.label,
                     contextData
                 );
 
                 const aiDecision = await this.analyzePage(base64Image, prompt);
-
                 if (!aiDecision) {
-                    console.log('⚠️ AI glitch. Retrying step...');
+                    console.log('AI glitch. Retrying step...');
                     continue;
                 }
 
                 if (aiDecision.elementId === lastActionId && aiDecision.action === lastActionTaken) {
-                        sameActionCount++;
-                    } else {
-                        sameActionCount = 0;
-                    }
-                    lastActionId = aiDecision.elementId;
+                    sameActionCount++;
+                } else {
+                    sameActionCount = 0;
+                }
+                lastActionId = aiDecision.elementId;
 
-                    if (sameActionCount >= 3) {
-                        console.log("🛑 AI is stuck in a loop. Terminating mission.");
-                        this.frictionEngine.logEvent('ai_stuck', {
-                            diagnosis: 'Logic Loop Detected',
-                            severity: 'Critical',
-                            thought: "I've tried the same thing 3 times with no result. The page is likely broken."
-                        });
-                        break; 
-                    }
-
-                // 🚨 REAL-TIME ALERTING CHECK
-                if ((aiDecision.reasoning || '').includes('ISSUE_FOUND')) {
-                    console.log("🔥 CRITICAL ISSUE DETECTED IN REAL-TIME!");
-                    // Integration note: You can trigger an immediate Slack alert here
+                if (sameActionCount >= 3) {
+                    console.log('AI is stuck in a loop. Terminating mission.');
+                    this.frictionEngine.logEvent('ai_stuck', {
+                        diagnosis: 'Logic Loop Detected',
+                        severity: 'Critical',
+                        thought: "I've tried the same thing 3 times with no result. The page is likely broken."
+                    });
+                    break;
                 }
 
-                // *** INTEGRATION START: LOG TO FRICTION ENGINE ***
                 this.frictionEngine.logEvent('ai_thought', {
                     thought: aiDecision.reasoning,
                     aiFrustrationLevel: aiDecision.frustration_level,
@@ -460,30 +479,24 @@ class MysteryShopper {
                     url: page.url(),
                     currentMilestone: aiDecision.current_milestone
                 });
-                // *** INTEGRATION END ***
 
-                if (aiDecision.verification_verdict === "VERIFIED_SUCCESS") {
-                    console.log(`✅ VERIFIED: Previous action worked.`);
+                if (aiDecision.verification_verdict === 'VERIFIED_SUCCESS') {
+                    console.log('VERIFIED: Previous action worked.');
                 } else {
-                    console.log(`⚠️ VERIFICATION FAILED: ${aiDecision.verification_reasoning}`);
+                    console.log(`VERIFICATION FAILED: ${aiDecision.verification_reasoning}`);
                 }
-
-                console.log(`🧠 Situation: ${aiDecision.current_page_description}`);
-                console.log(`🎯 Milestone: ${aiDecision.current_milestone}`);
-                console.log(`👉 Action: ${aiDecision.action} ${aiDecision.elementId ? `(ID ${aiDecision.elementId})` : ''}`);
 
                 lastStepDescription = aiDecision.current_page_description;
                 lastActionTaken = `${aiDecision.action} on ${aiDecision.reasoning}`;
                 lastExpectedEffect = aiDecision.expected_effect;
-
                 steps.push({ step: stepCount, ...aiDecision });
 
                 if (aiDecision.action === 'finish') {
                     trajectory.push({
                         step: stepCount,
                         action: aiDecision.action,
-                        reasoning: aiDecision.reasoning || "Mission ended by AI decision.",
-                        result: "Mission terminated by agent."
+                        reasoning: aiDecision.reasoning || 'Mission ended by AI decision.',
+                        result: 'Mission terminated by agent.'
                     });
                     completed = true;
                     this.frictionEngine.logEvent('action_finish', { action: 'finish' });
@@ -491,22 +504,19 @@ class MysteryShopper {
                 }
                 if (aiDecision.diagnosis === 'CRITICAL_FAILURE') break;
 
-                // --- 4. EXECUTE ---
                 try {
-                    // Clean badges right before interaction to prevent blocking
-                    await domUtils.cleanupMarkers(page); 
+                    await domUtils.cleanupMarkers(page);
                     const preActionUrl = page.url();
-                    
                     await this.executeAction(page, aiDecision);
-                    lastActionResult = "Success";
-                    
+                    lastActionResult = 'Success';
+
                     if (aiDecision.action === 'submit') {
                         const transitioned = await Promise.race([
                             page.waitForURL((u) => u.toString() !== preActionUrl, { timeout: 8000 }).then(() => true).catch(() => false),
                             page.locator('text=/account|welcome|logged in|signup|error|invalid/i').first().isVisible({ timeout: 8000 }).then(() => true).catch(() => false)
                         ]);
                         if (!transitioned) {
-                            lastActionResult = "FAILED: Submit click did not cause redirect or visible state change";
+                            lastActionResult = 'FAILED: Submit click did not cause redirect or visible state change';
                             this.frictionEngine.logEvent('ui_error', {
                                 thought: 'Submit action produced no transition',
                                 aiFrustrationLevel: 7,
@@ -521,13 +531,12 @@ class MysteryShopper {
                     trajectory.push({
                         step: stepCount,
                         action: aiDecision.action,
-                        reasoning: aiDecision.reasoning || "No reasoning provided.",
+                        reasoning: aiDecision.reasoning || 'No reasoning provided.',
                         result: lastActionResult
                     });
                 } catch (err) {
-                    console.log(`   ❌ Action Failed: ${err.message}`);
+                    console.log(`   Action Failed: ${err.message}`);
                     lastActionResult = `FAILED: ${err.message}`;
-                    
                     this.frictionEngine.logEvent('ui_error', {
                         thought: `Interaction failed: ${err.message}`,
                         aiFrustrationLevel: 8,
@@ -538,55 +547,75 @@ class MysteryShopper {
                     });
 
                     if (err.message.includes('intercepts pointer events') || err.message.includes('Timeout') || err.message.includes('closed')) {
-                        if (!page.isClosed()) await page.keyboard.press('Escape'); 
+                        if (!page.isClosed()) await page.keyboard.press('Escape');
                     }
-                    if (err.message.includes('Target page, context or browser has been closed')) break; 
+                    if (err.message.includes('Target page, context or browser has been closed')) break;
 
                     trajectory.push({
                         step: stepCount,
                         action: aiDecision.action,
-                        reasoning: aiDecision.reasoning || "No reasoning provided.",
+                        reasoning: aiDecision.reasoning || 'No reasoning provided.',
                         result: lastActionResult
                     });
                 }
             }
+            }
         } catch (error) {
             console.error('[Shopper] System Error:', error.message);
+            this.frictionEngine.logEvent('ui_error', {
+                diagnosis: 'SYSTEM_CRASH',
+                severity: 'Critical',
+                thought: error.message,
+                url
+            });
         } finally {
             if (context) {
-                try { await context.close(); } catch (e) { }
+                try { await context.close(); } catch (e) {}
             }
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
 
-            const videoFiles = fs.readdirSync(sessionPath).filter((f) => f.endsWith('.webm'));
+            const videoFiles = fs.existsSync(sessionPath)
+                ? fs.readdirSync(sessionPath).filter((f) => f.endsWith('.webm'))
+                : [];
             if (videoFiles.length > 0) {
                 try {
                     fs.renameSync(path.join(sessionPath, videoFiles[0]), path.join(sessionPath, 'recording.webm'));
-                    console.log('🎥 Video recording saved.');
-                } catch (e) { console.error('Failed to rename video:', e.message); }
+                    console.log('Video recording saved.');
+                } catch (e) {
+                    console.error('Failed to rename video:', e.message);
+                }
             }
         }
 
         const report = this.frictionEngine.getReport();
-        
-        // 1. ATTACH METADATA
         const recordingPath = path.join(sessionPath, 'recording.webm');
         report.videoUrl = fs.existsSync(recordingPath) ? `/sessions/${sessionDirName}/recording.webm` : null;
-        report.goal = goal;
-        report.rationale = this.missionRationale || "No rationale captured.";
-        report.milestones = milestones;
-        report.persona = config.persona; // So the notifier knows who was testing
+        report.goal = goal || 'Goal Discovery Failed';
+        report.rationale = this.missionRationale || (infraFailure ? 'Mission aborted during preflight.' : 'No rationale captured.');
+        report.milestones = milestones.length ? milestones : ['N/A'];
+        report.persona = config.persona;
         report.device = deviceConfig.label;
 
-        // 2. TRIGGER THE RCA (This is what was missing!)
-        console.log("🧠 Generating Root Cause Analysis...");
-        report.rca = await this.generateRCA(report); 
+        if (infraFailure) {
+            report.rca = {
+                summary: 'Mission aborted before AI execution because target site was unreachable.',
+                rootCause: infraFailure,
+                suggestedFix: 'Fix SSL/DNS/connectivity or server availability, then rerun.',
+                owner: 'Infrastructure',
+                confidence: 1.0
+            };
+        } else {
+            console.log('Generating Root Cause Analysis...');
+            report.rca = await this.generateRCA(report);
+        }
 
-        // 3. SEND THE ALERT
-        await this.notifier.sendAlert(report, goal, url);
+        try {
+            await this.notifier.sendAlert(report, report.goal, url);
+        } catch (e) {
+            console.error('[Notifier] Alert send failed:', e.message);
+        }
         return report;
     }
-
     async analyzePage(base64Image, prompt) {
         try {
             let textResponse = await aiClient.analyze(prompt, base64Image);
@@ -665,5 +694,7 @@ class MysteryShopper {
         }
     }
 }
+
+
 module.exports = MysteryShopper;
 
