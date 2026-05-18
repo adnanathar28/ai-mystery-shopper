@@ -389,6 +389,8 @@ class MysteryShopper {
             }
 
             milestones = await this.generateMissionPlan(goal);
+            const currentPageClass = await this.classifyPage(page);
+            console.log(`[Shopper] Page class detected: ${currentPageClass}`);
 
             let sameActionCount = 0;
             let lastActionId = null;
@@ -401,7 +403,7 @@ class MysteryShopper {
             let stepCount = 0;
             const MAX_STEPS = 30;
             const trajectory = [];
-            const noChangeCountsByTarget = {};
+            const noSignalCountsByTarget = {};
             const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
             const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
 
@@ -447,6 +449,7 @@ class MysteryShopper {
                     elementMap,
                     config.persona,
                     deviceConfig.label,
+                    currentPageClass,
                     contextData
                 );
 
@@ -550,6 +553,7 @@ class MysteryShopper {
                 let preElementState = null;
                 let postElementState = null;
                 let submitTransitioned = null;
+                let stepEvidence = null;
 
                 try {
                     preState = await this.capturePageState(page);
@@ -565,15 +569,19 @@ class MysteryShopper {
                     postElementState = await this.captureElementState(page, finalDecision);
                     toggleChanged = preToggle.isToggle && preToggle.exists && postToggle.exists && preToggle.signature !== postToggle.signature;
                     observedEffect = this.buildObservedEffect(preState, postState, { toggleChanged });
-                    verificationOutcome = this.verifyActionOutcome(finalDecision, preElementState, postElementState, observedEffect, null);
-                    correctedDiagnosis = this.correctDiagnosis(finalDecision, observedEffect, sessionLogs, noChangeCountsByTarget, wasToggleTarget);
+                    const evidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
+                    stepEvidence = evidence;
+                    verificationOutcome = this.classifyOutcomeFromEvidence(evidence);
+                    correctedDiagnosis = this.correctDiagnosis(finalDecision, evidence, noSignalCountsByTarget);
 
                     if (finalDecision.action === 'submit') {
                         submitTransitioned = await Promise.race([
                             page.waitForURL((u) => u.toString() !== preActionUrl, { timeout: 8000 }).then(() => true).catch(() => false),
                             page.locator('text=/account|welcome|logged in|signup|error|invalid/i').first().isVisible({ timeout: 8000 }).then(() => true).catch(() => false)
                         ]);
-                        verificationOutcome = this.verifyActionOutcome(finalDecision, preElementState, postElementState, observedEffect, submitTransitioned);
+                        const submitEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
+                        stepEvidence = submitEvidence;
+                        verificationOutcome = this.classifyOutcomeFromEvidence(submitEvidence);
                         if (!submitTransitioned) {
                             lastActionResult = 'FAILED: Submit click did not cause redirect or visible state change';
                             this.frictionEngine.logEvent('ui_error', {
@@ -601,7 +609,9 @@ class MysteryShopper {
                     observedEffect = this.buildObservedEffect(preState, postState, { toggleChanged: false });
                     postElementState = await this.captureElementState(page, finalDecision).catch(() => null);
                     verificationOutcome = 'failed';
-                    correctedDiagnosis = this.correctDiagnosis(finalDecision, observedEffect, sessionLogs, noChangeCountsByTarget, wasToggleTarget);
+                    const errorEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
+                    stepEvidence = errorEvidence;
+                    correctedDiagnosis = this.correctDiagnosis(finalDecision, errorEvidence, noSignalCountsByTarget);
                     this.frictionEngine.logEvent('ui_error', {
                         thought: `Interaction failed: ${err.message}`,
                         aiFrustrationLevel: 8,
@@ -640,7 +650,8 @@ class MysteryShopper {
                     currentMilestone: finalDecision.current_milestone,
                     expectedEffect: finalDecision.expected_effect,
                     observedEffect: observedEffect ? observedEffect.summary : 'unknown',
-                    verificationOutcome
+                    verificationOutcome,
+                    evidence: stepEvidence || {}
                 });
             }
             }
@@ -849,7 +860,7 @@ class MysteryShopper {
         return { isToggle: state.isToggle, exists: true, signature: state.signature };
     }
 
-    correctDiagnosis(decision, observedEffect, sessionLogs, noChangeCountsByTarget, wasToggleTarget) {
+    computeInteractionEvidence(decision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned) {
         const latestNetworkErrors = sessionLogs.errors.slice(-5);
         const latestConsoleErrors = sessionLogs.console.slice(-5);
         const has404 = latestNetworkErrors.some((e) => e.includes('[404]'));
@@ -857,27 +868,137 @@ class MysteryShopper {
         const hasSevereConsoleError = latestConsoleErrors.some((e) =>
             /(typeerror|referenceerror|syntaxerror|unhandled|cannot read|is not a function|failed to fetch)/i.test(e)
         );
+        const elementValueChanged = !!(preElementState && postElementState && preElementState.value !== postElementState.value);
+        const toggleStateChanged = !!(preElementState?.isToggle && postElementState?.isToggle &&
+            (preElementState.checked !== postElementState.checked || preElementState.ariaChecked !== postElementState.ariaChecked));
+        const structuralMutation = !!(observedEffect && (observedEffect.inputCountChanged || observedEffect.contentHashChanged || observedEffect.modalChanged));
+        const visualMutation = !!(observedEffect && (observedEffect.urlChanged || observedEffect.modalChanged));
+        const anyMutation = !!(observedEffect && observedEffect.anyChange);
+
+        return {
+            action: decision.action,
+            has404,
+            has5xx,
+            hasSevereConsoleError,
+            submitTransitioned: submitTransitioned === true,
+            wasToggleTarget: !!wasToggleTarget,
+            elementValueChanged,
+            toggleStateChanged,
+            structuralMutation,
+            visualMutation,
+            anyMutation
+        };
+    }
+
+    classifyOutcomeFromEvidence(evidence) {
+        if (evidence.hasSevereConsoleError || evidence.has5xx) return 'failed';
+        if (evidence.action === 'submit') return evidence.submitTransitioned ? 'matched' : 'failed';
+        if (evidence.toggleStateChanged || evidence.elementValueChanged) return 'matched';
+        if (evidence.anyMutation || evidence.structuralMutation || evidence.visualMutation) return 'weak_match';
+        return 'inconclusive';
+    }
+
+    correctDiagnosis(decision, evidence, noSignalCountsByTarget) {
         const targetKey = `${decision.action}:${decision.elementId ?? 'none'}`;
-        const noChangeForDeadLink = !observedEffect.anyChange && ['click', 'submit'].includes(decision.action);
+        const noSignalInteraction = ['click', 'submit'].includes(decision.action) &&
+            !evidence.anyMutation &&
+            !evidence.structuralMutation &&
+            !evidence.visualMutation &&
+            !evidence.toggleStateChanged &&
+            !evidence.elementValueChanged &&
+            !evidence.submitTransitioned;
 
-        if (noChangeForDeadLink && !wasToggleTarget) {
-            noChangeCountsByTarget[targetKey] = (noChangeCountsByTarget[targetKey] || 0) + 1;
+        if (noSignalInteraction && !evidence.wasToggleTarget) {
+            noSignalCountsByTarget[targetKey] = (noSignalCountsByTarget[targetKey] || 0) + 1;
         } else {
-            noChangeCountsByTarget[targetKey] = 0;
+            noSignalCountsByTarget[targetKey] = 0;
         }
 
-        if (hasSevereConsoleError) return 'Frontend Failure';
-        if (has5xx) return 'Backend Failure';
+        if (evidence.hasSevereConsoleError) return 'Frontend Failure';
+        if (evidence.has5xx) return 'Backend Failure';
+        if (evidence.has404) return evidence.anyMutation ? 'Missing Route' : 'Dead Link';
 
-        if (has404) {
-            return observedEffect.anyChange ? 'Missing Route' : 'Dead Link';
-        }
-
-        if (!wasToggleTarget && noChangeCountsByTarget[targetKey] >= 2 && ['click', 'submit'].includes(decision.action)) {
+        if (!evidence.wasToggleTarget && noSignalCountsByTarget[targetKey] >= 3 && ['click', 'submit'].includes(decision.action)) {
             return 'Dead Link';
         }
 
         return decision.diagnosis;
+    }
+
+    async classifyPage(page) {
+        try {
+            const signals = await page.evaluate(() => {
+                const forms = document.querySelectorAll('form').length;
+                const inputs = document.querySelectorAll('input, textarea, select').length;
+                const passwordInputs = document.querySelectorAll('input[type="password"]').length;
+                const tables = document.querySelectorAll('table').length;
+                const tableRows = document.querySelectorAll('table tr').length;
+                const editDeleteLinks = document.querySelectorAll('a, button');
+                let hasCrudActions = false;
+                editDeleteLinks.forEach((el) => {
+                    const text = (el.textContent || '').toLowerCase();
+                    if (text.includes('edit') || text.includes('delete') || text.includes('remove') || text.includes('add')) {
+                        hasCrudActions = true;
+                    }
+                });
+                const headingText = (document.querySelector('h1, h2, h3')?.textContent || '').toLowerCase();
+                const bodyText = (document.body?.innerText || '').toLowerCase();
+                const navLinks = document.querySelectorAll('a').length;
+                const widgets = document.querySelectorAll('[role="tabpanel"], [role="tab"], .card, .widget, .dashboard').length;
+                const hasErrorIndicators =
+                    bodyText.includes('error') ||
+                    bodyText.includes('not found') ||
+                    bodyText.includes('forbidden') ||
+                    bodyText.includes('unauthorized') ||
+                    bodyText.includes('access denied');
+
+                return {
+                    forms,
+                    inputs,
+                    passwordInputs,
+                    tables,
+                    tableRows,
+                    hasCrudActions,
+                    headingText,
+                    bodyText,
+                    navLinks,
+                    widgets,
+                    hasErrorIndicators
+                };
+            });
+
+            if (signals.hasErrorIndicators || signals.passwordInputs > 0 && signals.forms > 0 && signals.inputs <= 5) {
+                if (signals.hasErrorIndicators) return 'auth_gate_or_error';
+                return 'transactional_form';
+            }
+
+            if (signals.tables > 0 && signals.tableRows >= 3 && signals.hasCrudActions) {
+                if (signals.headingText.includes('challenging') || signals.bodyText.includes('challenging dom')) {
+                    return 'demo_challenge';
+                }
+                return 'crud_table';
+            }
+
+            if (signals.forms > 0 && signals.inputs >= 3) {
+                return 'transactional_form';
+            }
+
+            if (signals.widgets >= 2) {
+                return 'dashboard_app';
+            }
+
+            if (signals.headingText.includes('challenging') || signals.bodyText.includes('challenging dom') || signals.bodyText.includes('the internet')) {
+                return 'demo_challenge';
+            }
+
+            if (signals.navLinks >= 8) {
+                return 'content_nav';
+            }
+
+            return 'content_nav';
+        } catch (e) {
+            return 'content_nav';
+        }
     }
 
     async analyzePage(base64Image, prompt) {

@@ -1,6 +1,6 @@
 const PERSONAS = require('../config/personas');
 
-module.exports = (goal, milestones, elementMap, personaKey, deviceLabel, history) => {
+module.exports = (goal, milestones, elementMap, personaKey, deviceLabel, pageClass, history) => {
     const persona = PERSONAS[personaKey] || PERSONAS.first_time_user;
 
     return `
@@ -8,11 +8,18 @@ module.exports = (goal, milestones, elementMap, personaKey, deviceLabel, history
 You are testing as: ${persona.label}
 ${persona.behavior}
 Device: ${deviceLabel}
+Page Class: ${pageClass}
 
 # SITUATION
 USER GOAL: "${goal}"
 MILESTONES: ${JSON.stringify(milestones)}
 ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
+
+# PAGE STRATEGY
+- If page class is "demo_challenge", DO NOT assume failure from lack of obvious visual transition. Prefer structural/control-state evidence.
+- If page class is "crud_table", prioritize row-level effects and action-column outcomes.
+- If page class is "transactional_form", prioritize field validation, submit outcome, and navigation/result state.
+- If page class is "auth_gate_or_error", diagnose blockers clearly and avoid random navigation.
 
 # HISTORY
 - Last Action: "${history.lastActionTaken}"
