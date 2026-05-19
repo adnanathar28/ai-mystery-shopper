@@ -21,7 +21,7 @@ class FrictionEngine {
       const { details } = event;
       if (!details) return;
 
-      // 🚨 CRITICAL FIX 1: Weight site-wide errors much higher
+      // CRITICAL FIX 1: Weight site-wide errors much higher
       // If the AI identifies a Backend Error or Frontend Crash, it's a P0.
       if (details.diagnosis === 'Backend Failure') score += 90; 
       if (details.diagnosis === 'Frontend Failure') score += 80;
@@ -57,7 +57,7 @@ class FrictionEngine {
   getReport() {
     const rawScore = this.calculateScore();
     
-    // 🚨 CRITICAL FIX 2: Define what "Terminal Failure" actually means
+    // CRITICAL FIX 2: Define what "Terminal Failure" actually means
     // We must include "Backend Error" as a failure, even if the AI clicks 'finish'.
     const failureDiagnoses = ['Stuck', 'CRITICAL_FAILURE', 'Backend Failure', 'Frontend Failure', 'Missing Route'];
     
@@ -85,7 +85,7 @@ class FrictionEngine {
       }
     }
 
-    // 🚨 CRITICAL FIX 3: Better Diagnosis Picking
+    // CRITICAL FIX 3: Better Diagnosis Picking
     const issues = this.events.filter(e => e.details?.diagnosis && e.details.diagnosis !== 'Healthy');
     let topDiagnosis = 'Healthy';
     
@@ -98,16 +98,27 @@ class FrictionEngine {
     }
 
     const roundedScore = Math.round(Math.min(finalScore, 100));
+    const contractEvents = this.events.filter((e) => e.type === 'ai_thought' && e.details?.contractVerdict);
+    const contractTotal = contractEvents.length;
+    const contractMatched = contractEvents.filter((e) => e.details.contractVerdict === 'matched').length;
+    const contractFailed = contractEvents.filter((e) => e.details.contractVerdict === 'failed').length;
+    const contractInconclusive = contractEvents.filter((e) => e.details.contractVerdict === 'inconclusive').length;
+    const pct = (n) => contractTotal > 0 ? Math.round((n / contractTotal) * 100) : 0;
 
     return {
       totalEvents: this.events.length,
       confusionScore: roundedScore,
       priority: this.calculateSeverity(roundedScore),
       topDiagnosis: topDiagnosis,
-      statusLabel: roundedScore >= 50 ? "🚨 CRITICAL FRICTION" : "✅ SMOOTH RUN",
+      statusLabel: roundedScore >= 50 ? "CRITICAL FRICTION" : "SMOOTH RUN",
+      contractPassRate: pct(contractMatched),
+      contractFailRate: pct(contractFailed),
+      contractInconclusiveRate: pct(contractInconclusive),
+      contractSampleCount: contractTotal,
       log: this.events
     };
   }
 }
 
 module.exports = FrictionEngine;
+

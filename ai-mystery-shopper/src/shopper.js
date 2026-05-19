@@ -10,6 +10,7 @@ const systemPrompt = require('./prompts/systemPrompt'); // IMPORTED
 const DEVICES = require('./config/devices'); // IMPORTED
 const { AIDecisionSchema, normalizeDecisionShape } = require('./schemas/aiDecisionSchema');
 const { sanitizeDecision } = require('./decisionSanitizer');
+const { evaluateContract } = require('./evidenceContracts');
 
 const USER_DATA_DIR = path.join(__dirname, '../public/user_data');
 
@@ -603,6 +604,7 @@ class MysteryShopper {
                 let stepEvidence = null;
                 let preLocalFingerprint = null;
                 let postLocalFingerprint = null;
+                let contractEval = { contractId: 'none', verdict: 'inconclusive', confidence: 0.4, reasons: [] };
 
                 try {
                     preState = await this.capturePageState(page);
@@ -646,7 +648,8 @@ class MysteryShopper {
                     observedEffect = this.buildObservedEffect(preState, postState, { toggleChanged });
                     const evidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
                     stepEvidence = evidence;
-                    verificationOutcome = this.classifyOutcomeFromEvidence(evidence);
+                    contractEval = evaluateContract(finalDecision, evidence);
+                    verificationOutcome = contractEval.verdict || this.classifyOutcomeFromEvidence(evidence);
                     correctedDiagnosis = this.correctDiagnosis(finalDecision, evidence, noSignalCountsByTarget);
                     this.updateFamilyEvidence(this.buildActionFamilyKey(finalDecision, preElementState), familyStats, evidence, verificationOutcome);
 
@@ -657,7 +660,8 @@ class MysteryShopper {
                         ]);
                         const submitEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
                         stepEvidence = submitEvidence;
-                        verificationOutcome = this.classifyOutcomeFromEvidence(submitEvidence);
+                        contractEval = evaluateContract(finalDecision, submitEvidence);
+                        verificationOutcome = contractEval.verdict || this.classifyOutcomeFromEvidence(submitEvidence);
                         this.updateFamilyEvidence(this.buildActionFamilyKey(finalDecision, preElementState), familyStats, submitEvidence, verificationOutcome);
                         if (!submitTransitioned) {
                             lastActionResult = 'FAILED: Submit click did not cause redirect or visible state change';
@@ -689,6 +693,8 @@ class MysteryShopper {
                     verificationOutcome = 'failed';
                     const errorEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
                     stepEvidence = errorEvidence;
+                    contractEval = evaluateContract(finalDecision, errorEvidence);
+                    verificationOutcome = contractEval.verdict === 'inconclusive' ? 'failed' : contractEval.verdict;
                     correctedDiagnosis = this.correctDiagnosis(finalDecision, errorEvidence, noSignalCountsByTarget);
                     this.frictionEngine.logEvent('ui_error', {
                         thought: `Interaction failed: ${err.message}`,
@@ -729,7 +735,11 @@ class MysteryShopper {
                     expectedEffect: finalDecision.expected_effect,
                     observedEffect: observedEffect ? observedEffect.summary : 'unknown',
                     verificationOutcome,
-                    evidence: stepEvidence || {}
+                    evidence: stepEvidence || {},
+                    contractId: contractEval.contractId,
+                    contractVerdict: contractEval.verdict,
+                    contractConfidence: contractEval.confidence,
+                    contractReasons: contractEval.reasons
                 });
             }
             }
