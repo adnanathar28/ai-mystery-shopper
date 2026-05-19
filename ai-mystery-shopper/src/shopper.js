@@ -21,21 +21,37 @@ class MysteryShopper {
     }
 
     //this function guides the ai in an autonomous manner
-    async discoverGoal(page) {
+    async discoverGoal(page, capabilities = null) {
     console.log("🕵️  Autonomous Mode: Discovering primary test objective...");
     
     // Take a screenshot of the landing page
     const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60 });
     const base64Image = screenshotBuffer.toString('base64');
 
+    const capabilitySummary = capabilities
+        ? [
+            'Page Capability Summary:',
+            `- ${capabilities.hasForms ? 'Forms detected' : 'No forms detected'}`,
+            `- ${capabilities.hasEditableFields ? 'Editable inputs detected' : 'No editable inputs detected'}`,
+            `- ${capabilities.hasTables ? 'Table actions/structures present' : 'No tables detected'}`,
+            `- ${capabilities.hasButtons ? 'Buttons present' : 'No obvious buttons detected'}`,
+            `- Dominant interactions: ${(capabilities.dominantInteractions || []).join(', ') || 'unknown'}`,
+            `- ${capabilities.likelySandbox ? 'Likely interaction/demo sandbox' : 'Not likely a sandbox page'}`
+        ].join('\n')
+        : 'Page Capability Summary: unavailable';
+
     const prompt = `
     You are a Senior QA Engineer. 
     Look at this page. Your goal is to find the most important journey for a NEW user.
+
+    ${capabilitySummary}
 
     IMPORTANT RULES:
     1. If the page has a "Login" and a "Sign Up" option, and no credentials are provided, PRIORITIZE the "Sign Up" or "Registration" flow.
     2. If you choose a flow that requires data (email, name, etc.), you are authorized to use dummy test data (e.g., 'testuser_123@example.com').
     3. Avoid flows that require real credit cards or SMS verification.
+    4. Generate realistic test objectives grounded ONLY in observed page capabilities.
+    5. Do not assume persistence workflows unless editable inputs/forms/navigation transitions are observed.
     
     Return your answer in RAW JSON format:
     {
@@ -47,6 +63,19 @@ class MysteryShopper {
         const result = await aiClient.analyze(prompt, base64Image);
         const cleanResult = result.replace(/```json|```/g, '').trim();
         const discovery = JSON.parse(cleanResult);
+        const capabilityBiasGoal = 'Verify whether interactive controls trigger DOM/state mutations despite minimal visual feedback.';
+        const shouldOverrideForSandbox =
+            capabilities &&
+            capabilities.likelySandbox &&
+            !capabilities.hasForms &&
+            !capabilities.hasEditableFields &&
+            (capabilities.hasTables || (capabilities.dominantInteractions || []).includes('table_actions'));
+
+        if (shouldOverrideForSandbox) {
+            discovery.goal = capabilityBiasGoal;
+            discovery.rationale = `${discovery.rationale || ''} [Capability override: sandbox-like page with table/button interactions and no editable form workflow.]`.trim();
+        }
+
         console.log(`🎯  Autonomous Goal Selected: ${discovery.goal}`);
         console.log(`💡  Rationale: ${discovery.rationale}`);
         this.missionRationale = discovery.rationale || null;
@@ -396,8 +425,11 @@ class MysteryShopper {
                 setInterval(killAds, 1000);
             });
 
+            const pageCapabilities = await this.scanPageCapabilities(page);
+            console.log('[Shopper] Capability scan:', pageCapabilities);
+
             if (!goal || goal === '') {
-                goal = await this.discoverGoal(page);
+                goal = await this.discoverGoal(page, pageCapabilities);
             } else if (!this.missionRationale) {
                 this.missionRationale = 'Goal was provided manually.';
             }
@@ -1020,6 +1052,76 @@ class MysteryShopper {
         }
 
         return decision.diagnosis;
+    }
+
+    async scanPageCapabilities(page) {
+        try {
+            return await page.evaluate(() => {
+                const forms = document.querySelectorAll('form').length;
+                const inputs = document.querySelectorAll('input, textarea, select').length;
+                const hasTables = document.querySelectorAll('table').length > 0;
+                const bodyText = (document.body?.innerText || '').toLowerCase();
+
+                const editableInputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"], select'))
+                    .filter((el) => {
+                        const tag = el.tagName.toLowerCase();
+                        const type = (el.getAttribute('type') || '').toLowerCase();
+                        if (tag === 'input' && ['hidden', 'submit', 'button', 'image', 'reset', 'file'].includes(type)) return false;
+                        const style = window.getComputedStyle(el);
+                        const rect = el.getBoundingClientRect();
+                        const visible = style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 2 && rect.height > 2;
+                        const disabled = !!el.disabled || el.getAttribute('aria-disabled') === 'true' || el.hasAttribute('readonly');
+                        return visible && !disabled;
+                    }).length;
+
+                const visibleButtons = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'))
+                    .filter((el) => {
+                        const style = window.getComputedStyle(el);
+                        const rect = el.getBoundingClientRect();
+                        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 2 && rect.height > 2;
+                    }).length;
+
+                const hasAuthUI =
+                    bodyText.includes('login') ||
+                    bodyText.includes('sign up') ||
+                    bodyText.includes('register') ||
+                    bodyText.includes('password');
+
+                const tableActionControls = Array.from(document.querySelectorAll('table a, table button, tr a, tr button')).length;
+                const dominantInteractions = [];
+                if (visibleButtons > 0) dominantInteractions.push('buttons');
+                if (tableActionControls > 0) dominantInteractions.push('table_actions');
+                if (editableInputs > 0) dominantInteractions.push('form_inputs');
+                if (dominantInteractions.length === 0) dominantInteractions.push('static_content');
+
+                const likelySandbox =
+                    (hasTables && tableActionControls > 0 && editableInputs === 0 && forms === 0) ||
+                    bodyText.includes('challenging dom') ||
+                    bodyText.includes('the internet');
+
+                return {
+                    hasForms: forms > 0,
+                    hasTables,
+                    hasInputs: inputs > 0,
+                    hasAuthUI,
+                    hasEditableFields: editableInputs > 0,
+                    hasButtons: visibleButtons > 0,
+                    dominantInteractions,
+                    likelySandbox
+                };
+            });
+        } catch (e) {
+            return {
+                hasForms: false,
+                hasTables: false,
+                hasInputs: false,
+                hasAuthUI: false,
+                hasEditableFields: false,
+                hasButtons: false,
+                dominantInteractions: ['unknown'],
+                likelySandbox: false
+            };
+        }
     }
 
     async classifyPage(page) {
