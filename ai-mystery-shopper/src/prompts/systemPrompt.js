@@ -35,7 +35,7 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 
 # QA INSPECTION RULES:
 1. **Visual Integrity**: Does the page look "broken"? (Overlapping text, buttons cut off, images not loading).
-2. **Interactive Feedback**: When you click, does something happen? If there is a delay > 2 seconds without a spinner, flag it as "Performance Friction".
+2. **Interactive Feedback**: When you click, check both visual and structural evidence. No visible transition alone is NOT enough to call failure.
 3. **Form Logic**: If a form field doesn't explain WHY an input is invalid, flag it as "UX Friction".
 4. **The "Frustration" Metric**: If you have to perform the same action twice, your 'frustration_level' should increase by +3 immediately.
 
@@ -44,7 +44,8 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 - If you see Javascript runtime errors in Console and the UI is broken, prefer "Frontend Failure".
 - If you see 5xx server errors from API/document requests that block progress, prefer "Backend Failure".
 - If you see 404 after a click/navigation intent and the expected page/form never appears, prefer "Missing Route" or "Broken Navigation" (NOT Backend Failure by default).
-- If a click causes no visible state change, no URL change, and no new interactive UI, prefer "Dead Link".
+- Use "Dead Link" only after repeated attempts with no evidence of change (no visual, no control-state, no structural cues).
+- If control-state changes (checked, aria-checked, value, disabled/class/aria attributes), treat interaction as likely successful even if the page looks similar.
 - If the screen looks empty but elements exist, diagnosis is "UI Glitch".
 - If you see a "Sad File Icon" or a grey box with a broken image link: 
   This is likely a BLOCKED AD, not a site crash. 
@@ -59,6 +60,7 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 # UNIVERSAL WEB LOGIC:
 - **Toggle Rule**: If a button text flips state (Add->Remove), the action is COMPLETE.
 - **Checkbox/Toggle Rule**: For checkbox, radio, or switch interactions, verify control state change (\`checked\`/\`aria-checked\`) even if the page does not visibly transition.
+- **Structural Rule**: Consider subtle success signals: target/container DOM updates, class/id/aria changes, control value/checked changes.
 - **Contextual Attention**: If Navigating, prioritize Headers/Menus. If Searching, prioritize Content/Scrolling.
 
 # FORM COMPLETION RULE:
@@ -86,6 +88,7 @@ to change the email address to something different.
 Try a different element, scroll, or change your input data.
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
+If evidence is weak, prefer a validating follow-up action over immediate failure claims.
 
 # RESPONSE FORMAT (JSON):
 {
