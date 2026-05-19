@@ -554,12 +554,15 @@ class MysteryShopper {
                 let postElementState = null;
                 let submitTransitioned = null;
                 let stepEvidence = null;
+                let preLocalFingerprint = null;
+                let postLocalFingerprint = null;
 
                 try {
                     preState = await this.capturePageState(page);
                     const preToggle = await this.captureToggleState(page, finalDecision);
                     wasToggleTarget = preToggle.isToggle;
                     preElementState = await this.captureElementState(page, finalDecision);
+                    preLocalFingerprint = await this.captureLocalFingerprint(page, finalDecision);
                     await domUtils.cleanupMarkers(page);
                     const preActionUrl = page.url();
                     await this.executeAction(page, finalDecision);
@@ -567,9 +570,10 @@ class MysteryShopper {
                     postState = await this.capturePageState(page);
                     const postToggle = await this.captureToggleState(page, finalDecision);
                     postElementState = await this.captureElementState(page, finalDecision);
+                    postLocalFingerprint = await this.captureLocalFingerprint(page, finalDecision);
                     toggleChanged = preToggle.isToggle && preToggle.exists && postToggle.exists && preToggle.signature !== postToggle.signature;
                     observedEffect = this.buildObservedEffect(preState, postState, { toggleChanged });
-                    const evidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
+                    const evidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
                     stepEvidence = evidence;
                     verificationOutcome = this.classifyOutcomeFromEvidence(evidence);
                     correctedDiagnosis = this.correctDiagnosis(finalDecision, evidence, noSignalCountsByTarget);
@@ -579,7 +583,7 @@ class MysteryShopper {
                             page.waitForURL((u) => u.toString() !== preActionUrl, { timeout: 8000 }).then(() => true).catch(() => false),
                             page.locator('text=/account|welcome|logged in|signup|error|invalid/i').first().isVisible({ timeout: 8000 }).then(() => true).catch(() => false)
                         ]);
-                        const submitEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
+                        const submitEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
                         stepEvidence = submitEvidence;
                         verificationOutcome = this.classifyOutcomeFromEvidence(submitEvidence);
                         if (!submitTransitioned) {
@@ -608,8 +612,9 @@ class MysteryShopper {
                     postState = await this.capturePageState(page).catch(() => null);
                     observedEffect = this.buildObservedEffect(preState, postState, { toggleChanged: false });
                     postElementState = await this.captureElementState(page, finalDecision).catch(() => null);
+                    postLocalFingerprint = await this.captureLocalFingerprint(page, finalDecision).catch(() => null);
                     verificationOutcome = 'failed';
-                    const errorEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
+                    const errorEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
                     stepEvidence = errorEvidence;
                     correctedDiagnosis = this.correctDiagnosis(finalDecision, errorEvidence, noSignalCountsByTarget);
                     this.frictionEngine.logEvent('ui_error', {
@@ -797,41 +802,36 @@ class MysteryShopper {
         }).catch(() => null);
     }
 
-    verifyActionOutcome(decision, preElementState, postElementState, observedEffect, submitTransitioned) {
-        if (!decision) return 'failed';
+    async captureLocalFingerprint(page, decision) {
+        if (!decision || decision.elementId === undefined || decision.elementId === null) return null;
+        const locator = page.locator(`[data-ai-id="${decision.elementId}"]`).first();
+        const exists = (await locator.count()) > 0;
+        if (!exists) return null;
 
-        if (decision.action === 'click') {
-            if (preElementState?.isToggle && postElementState?.isToggle) {
-                const toggled = preElementState.checked !== postElementState.checked ||
-                    preElementState.ariaChecked !== postElementState.ariaChecked;
-                return toggled ? 'matched' : 'failed';
-            }
-            return observedEffect?.anyChange ? 'matched' : 'failed';
-        }
+        return await locator.evaluate((el) => {
+            const attrMap = {};
+            const attrKeys = ['id', 'class', 'role', 'type', 'name', 'value', 'disabled', 'checked', 'aria-checked', 'aria-expanded', 'aria-disabled', 'href'];
+            attrKeys.forEach((k) => {
+                const v = el.getAttribute(k);
+                if (v !== null) attrMap[k] = v;
+            });
+            Array.from(el.attributes).forEach((a) => {
+                if (a.name.startsWith('data-') || a.name.startsWith('aria-')) {
+                    attrMap[a.name] = a.value;
+                }
+            });
 
-        if (decision.action === 'type') {
-            if (postElementState && typeof decision.text === 'string') {
-                return postElementState.value === decision.text ? 'matched' : (observedEffect?.anyChange ? 'matched' : 'failed');
-            }
-            return observedEffect?.anyChange ? 'matched' : 'failed';
-        }
-
-        if (decision.action === 'select') {
-            if (preElementState && postElementState) {
-                return preElementState.value !== postElementState.value ? 'matched' : 'failed';
-            }
-            return observedEffect?.anyChange ? 'matched' : 'failed';
-        }
-
-        if (decision.action === 'submit') {
-            return submitTransitioned ? 'matched' : 'failed';
-        }
-
-        if (decision.action === 'scroll' || decision.action === 'finish') {
-            return 'matched';
-        }
-
-        return observedEffect?.anyChange ? 'matched' : 'failed';
+            const targetSubtreeSig = `${el.tagName}|${el.childElementCount}|${(el.textContent || '').trim().slice(0, 200)}|${JSON.stringify(attrMap)}`;
+            const container = el.closest('form, table, tr, td, section, article, main, div') || el.parentElement;
+            const containerSig = container
+                ? `${container.tagName}|${container.childElementCount}|${(container.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 600)}`
+                : '';
+            return {
+                targetSubtreeSig,
+                containerSig,
+                attrs: attrMap
+            };
+        }).catch(() => null);
     }
 
     async captureToggleState(page, decision) {
@@ -860,7 +860,7 @@ class MysteryShopper {
         return { isToggle: state.isToggle, exists: true, signature: state.signature };
     }
 
-    computeInteractionEvidence(decision, preElementState, postElementState, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned) {
+    computeInteractionEvidence(decision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned) {
         const latestNetworkErrors = sessionLogs.errors.slice(-5);
         const latestConsoleErrors = sessionLogs.console.slice(-5);
         const has404 = latestNetworkErrors.some((e) => e.includes('[404]'));
@@ -874,6 +874,11 @@ class MysteryShopper {
         const structuralMutation = !!(observedEffect && (observedEffect.inputCountChanged || observedEffect.contentHashChanged || observedEffect.modalChanged));
         const visualMutation = !!(observedEffect && (observedEffect.urlChanged || observedEffect.modalChanged));
         const anyMutation = !!(observedEffect && observedEffect.anyChange);
+        const localTargetMutation = !!(preLocalFingerprint && postLocalFingerprint && preLocalFingerprint.targetSubtreeSig !== postLocalFingerprint.targetSubtreeSig);
+        const localContainerMutation = !!(preLocalFingerprint && postLocalFingerprint && preLocalFingerprint.containerSig !== postLocalFingerprint.containerSig);
+        const localAttrMutation = !!(preLocalFingerprint && postLocalFingerprint &&
+            JSON.stringify(preLocalFingerprint.attrs || {}) !== JSON.stringify(postLocalFingerprint.attrs || {}));
+        const localMutationEvidence = localTargetMutation || localContainerMutation || localAttrMutation;
 
         return {
             action: decision.action,
@@ -886,14 +891,18 @@ class MysteryShopper {
             toggleStateChanged,
             structuralMutation,
             visualMutation,
-            anyMutation
+            anyMutation,
+            localTargetMutation,
+            localContainerMutation,
+            localAttrMutation,
+            localMutationEvidence
         };
     }
 
     classifyOutcomeFromEvidence(evidence) {
         if (evidence.hasSevereConsoleError || evidence.has5xx) return 'failed';
         if (evidence.action === 'submit') return evidence.submitTransitioned ? 'matched' : 'failed';
-        if (evidence.toggleStateChanged || evidence.elementValueChanged) return 'matched';
+        if (evidence.toggleStateChanged || evidence.elementValueChanged || evidence.localMutationEvidence) return 'matched';
         if (evidence.anyMutation || evidence.structuralMutation || evidence.visualMutation) return 'weak_match';
         return 'inconclusive';
     }
@@ -906,7 +915,8 @@ class MysteryShopper {
             !evidence.visualMutation &&
             !evidence.toggleStateChanged &&
             !evidence.elementValueChanged &&
-            !evidence.submitTransitioned;
+            !evidence.submitTransitioned &&
+            !evidence.localMutationEvidence;
 
         if (noSignalInteraction && !evidence.wasToggleTarget) {
             noSignalCountsByTarget[targetKey] = (noSignalCountsByTarget[targetKey] || 0) + 1;
