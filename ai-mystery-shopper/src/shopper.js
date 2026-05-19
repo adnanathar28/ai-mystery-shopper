@@ -194,14 +194,28 @@ class MysteryShopper {
     async generateMissionPlan(goal) {
         console.log("🤔 Generating strategic plan...");
         const prompt = `
-            You are an expert QA Strategist.
-            The objective is to test: "${goal}".
-            
-            Create a 4-step mission plan that covers the happy path but also looks for common friction points.
-            1. Navigation/Discovery (Finding the starting point)
-            2. Data Entry/Interaction (Testing forms or buttons)
-            3. Process Submission (The transition state)
-            4. Verification (Confirming the final result)
+            You are an autonomous QA strategist.
+
+            Generate a concise interaction-testing plan for the objective:
+            "${goal}"
+
+            The plan should adapt to:
+            - the type of page
+            - interaction patterns
+            - expected browser behavior
+
+            Plans may include:
+            - interaction testing
+            - state verification
+            - structural mutation checks
+            - navigation testing
+            - CRUD actions
+            - toggles
+            - async behavior
+            - form submission
+            ONLY if relevant.
+
+            Do not assume every site contains forms, submissions, or full-page transitions.
 
             RETURN ONLY A RAW JSON ARRAY OF STRINGS.
             Example: ["Find Signup CTA", "Fill registration form", "Submit and wait for redirect", "Verify Dashboard access"]
