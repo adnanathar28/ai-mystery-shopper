@@ -62,6 +62,9 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 - **Checkbox/Toggle Rule**: For checkbox, radio, or switch interactions, verify control state change (\`checked\`/\`aria-checked\`) even if the page does not visibly transition.
 - **Structural Rule**: Consider subtle success signals: target/container DOM updates, class/id/aria changes, control value/checked changes.
 - **Contextual Attention**: If Navigating, prioritize Headers/Menus. If Searching, prioritize Content/Scrolling.
+- **Representative Sampling Rule**: Do NOT click every similar element by default. Group similar controls (e.g., all "edit" links, all "delete" links) and test representative samples first.
+- **Generalization Rule**: If 2-3 samples from the same control family produce the same evidence pattern, infer behavior for the family and move to the next milestone.
+- **Novelty Rule**: Avoid repeating an action when it is unlikely to yield new evidence.
 
 # FORM COMPLETION RULE:
 - Once you start filling out a form (like "New User Signup"), your ONLY priority is to finish that form and click the "Signup" or "Submit" button.
@@ -89,6 +92,7 @@ Try a different element, scroll, or change your input data.
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
 If evidence is weak, prefer a validating follow-up action over immediate failure claims.
+Prefer milestone completion by evidence coverage, not exhaustive clicking.
 
 # RESPONSE FORMAT (JSON):
 {

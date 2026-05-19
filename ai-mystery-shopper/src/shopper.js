@@ -418,6 +418,7 @@ class MysteryShopper {
             const MAX_STEPS = 30;
             const trajectory = [];
             const noSignalCountsByTarget = {};
+            const familyStats = {};
             const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
             const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
 
@@ -577,6 +578,30 @@ class MysteryShopper {
                     wasToggleTarget = preToggle.isToggle;
                     preElementState = await this.captureElementState(page, finalDecision);
                     preLocalFingerprint = await this.captureLocalFingerprint(page, finalDecision);
+                    const actionFamilyKey = this.buildActionFamilyKey(finalDecision, preElementState);
+                    if (this.shouldSkipLowNovelty(actionFamilyKey, familyStats)) {
+                        lastActionResult = `SKIPPED: low novelty family (${actionFamilyKey})`;
+                        this.frictionEngine.logEvent('ai_thought', {
+                            thought: `${finalDecision.reasoning} [Skipped due to low novelty in family ${actionFamilyKey}]`,
+                            aiFrustrationLevel: finalDecision.frustration_level,
+                            diagnosis: 'Healthy',
+                            severity: 'Low',
+                            action: finalDecision.action,
+                            url: page.url(),
+                            currentMilestone: finalDecision.current_milestone,
+                            expectedEffect: finalDecision.expected_effect,
+                            observedEffect: 'skipped_by_novelty_gate',
+                            verificationOutcome: 'inconclusive',
+                            evidence: { family: actionFamilyKey, skipped: true }
+                        });
+                        trajectory.push({
+                            step: stepCount,
+                            action: finalDecision.action,
+                            reasoning: finalDecision.reasoning || 'No reasoning provided.',
+                            result: lastActionResult
+                        });
+                        continue;
+                    }
                     await domUtils.cleanupMarkers(page);
                     const preActionUrl = page.url();
                     await this.executeAction(page, finalDecision);
@@ -591,6 +616,7 @@ class MysteryShopper {
                     stepEvidence = evidence;
                     verificationOutcome = this.classifyOutcomeFromEvidence(evidence);
                     correctedDiagnosis = this.correctDiagnosis(finalDecision, evidence, noSignalCountsByTarget);
+                    this.updateFamilyEvidence(this.buildActionFamilyKey(finalDecision, preElementState), familyStats, evidence, verificationOutcome);
 
                     if (finalDecision.action === 'submit') {
                         submitTransitioned = await Promise.race([
@@ -600,6 +626,7 @@ class MysteryShopper {
                         const submitEvidence = this.computeInteractionEvidence(finalDecision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned);
                         stepEvidence = submitEvidence;
                         verificationOutcome = this.classifyOutcomeFromEvidence(submitEvidence);
+                        this.updateFamilyEvidence(this.buildActionFamilyKey(finalDecision, preElementState), familyStats, submitEvidence, verificationOutcome);
                         if (!submitTransitioned) {
                             lastActionResult = 'FAILED: Submit click did not cause redirect or visible state change';
                             this.frictionEngine.logEvent('ui_error', {
@@ -811,6 +838,7 @@ class MysteryShopper {
                 value: typeof el.value === 'string' ? el.value : '',
                 checked: !!el.checked,
                 ariaChecked: el.getAttribute('aria-checked') || '',
+                text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60).toLowerCase(),
                 isToggle
             };
         }).catch(() => null);
@@ -919,6 +947,51 @@ class MysteryShopper {
         if (evidence.toggleStateChanged || evidence.elementValueChanged || evidence.localMutationEvidence) return 'matched';
         if (evidence.anyMutation || evidence.structuralMutation || evidence.visualMutation) return 'weak_match';
         return 'inconclusive';
+    }
+
+    buildActionFamilyKey(decision, preElementState) {
+        const action = decision?.action || 'unknown';
+        if (!preElementState) return `${action}:unknown`;
+        const tag = preElementState.tag || 'unknown';
+        const role = preElementState.role || '';
+        const type = preElementState.type || '';
+        const text = (preElementState.text || '').replace(/\d+/g, '#').slice(0, 24);
+        return `${action}:${tag}:${type}:${role}:${text}`;
+    }
+
+    shouldSkipLowNovelty(familyKey, familyStats) {
+        const stats = familyStats[familyKey];
+        if (!stats) return false;
+        const minSamples = 2;
+        const maxSamples = 4;
+        if (stats.samples >= maxSamples) return true;
+        if (stats.samples >= minSamples && stats.uniqueSignatures <= 1) return true;
+        return false;
+    }
+
+    updateFamilyEvidence(familyKey, familyStats, evidence, verificationOutcome) {
+        if (!familyKey) return;
+        const signature = [
+            verificationOutcome,
+            evidence?.toggleStateChanged ? 'toggle' : 'notoggle',
+            evidence?.elementValueChanged ? 'val' : 'noval',
+            evidence?.localMutationEvidence ? 'localmut' : 'nolocalmut',
+            evidence?.submitTransitioned ? 'submitok' : 'nosubmitok',
+            evidence?.has404 ? '404' : 'no404',
+            evidence?.has5xx ? '5xx' : 'no5xx',
+            evidence?.hasSevereConsoleError ? 'jserr' : 'nojserr'
+        ].join('|');
+
+        if (!familyStats[familyKey]) {
+            familyStats[familyKey] = {
+                samples: 0,
+                signatures: {}
+            };
+        }
+
+        familyStats[familyKey].samples += 1;
+        familyStats[familyKey].signatures[signature] = (familyStats[familyKey].signatures[signature] || 0) + 1;
+        familyStats[familyKey].uniqueSignatures = Object.keys(familyStats[familyKey].signatures).length;
     }
 
     correctDiagnosis(decision, evidence, noSignalCountsByTarget) {
