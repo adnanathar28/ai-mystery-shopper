@@ -753,6 +753,7 @@ class MysteryShopper {
                     await domUtils.cleanupMarkers(page);
                     const preActionUrl = page.url();
                     await this.executeAction(page, finalDecision);
+                    await this.waitForEntryAdReenableSignal(page, finalDecision, preElementState);
                     lastActionResult = 'Success';
                     postState = await this.capturePageState(page);
                     const postToggle = await this.captureToggleState(page, finalDecision);
@@ -1061,7 +1062,15 @@ class MysteryShopper {
     computeInteractionEvidence(decision, preElementState, postElementState, preLocalFingerprint, postLocalFingerprint, observedEffect, sessionLogs, wasToggleTarget, submitTransitioned) {
         const latestNetworkErrors = sessionLogs.errors.slice(-5);
         const latestConsoleErrors = sessionLogs.console.slice(-5);
-        const has404 = latestNetworkErrors.some((e) => e.includes('[404]'));
+        const has404 = latestNetworkErrors.some((e) => {
+            if (!e.includes('[404]')) return false;
+            const urlPart = e.replace(/^\[\d+\]\s*/, '').toLowerCase();
+            // Ignore common static/asset 404s that should not imply a broken user path.
+            if (/\.(png|jpg|jpeg|gif|svg|webp|ico|css|js|map|woff2?|ttf|eot)(\?|$)/i.test(urlPart)) return false;
+            if (urlPart.includes('/favicon.ico')) return false;
+            if (urlPart.includes('/ads') || urlPart.includes('doubleclick') || urlPart.includes('googlesyndication')) return false;
+            return true;
+        });
         const has5xx = latestNetworkErrors.some((e) => /\[(5\d\d)\]/.test(e));
         const hasSevereConsoleError = latestConsoleErrors.some((e) =>
             /(typeerror|referenceerror|syntaxerror|unhandled|cannot read|is not a function|failed to fetch)/i.test(e)
@@ -1152,6 +1161,15 @@ class MysteryShopper {
 
     correctDiagnosis(decision, evidence, noSignalCountsByTarget) {
         const targetKey = `${decision.action}:${decision.elementId ?? 'none'}`;
+        const navIntent = ['click', 'submit'].includes(decision.action);
+        const positiveEvidence =
+            evidence.anyMutation ||
+            evidence.structuralMutation ||
+            evidence.visualMutation ||
+            evidence.toggleStateChanged ||
+            evidence.elementValueChanged ||
+            evidence.submitTransitioned ||
+            evidence.localMutationEvidence;
         const noSignalInteraction = ['click', 'submit'].includes(decision.action) &&
             !evidence.anyMutation &&
             !evidence.structuralMutation &&
@@ -1169,7 +1187,9 @@ class MysteryShopper {
 
         if (evidence.hasSevereConsoleError) return 'Frontend Failure';
         if (evidence.has5xx) return 'Backend Failure';
-        if (evidence.has404) return evidence.anyMutation ? 'Missing Route' : 'Dead Link';
+        if (evidence.has404 && navIntent && !positiveEvidence) {
+            return evidence.anyMutation ? 'Missing Route' : 'Dead Link';
+        }
 
         if (!evidence.wasToggleTarget && noSignalCountsByTarget[targetKey] >= 3 && ['click', 'submit'].includes(decision.action)) {
             return 'Dead Link';
@@ -1482,6 +1502,22 @@ class MysteryShopper {
             } else {
                 await page.waitForTimeout(1500);
             }
+        }
+    }
+
+    async waitForEntryAdReenableSignal(page, decision, preElementState) {
+        const isEntryAdPage = /\/entry_ad(?:\/)?$/i.test(page.url());
+        const isClick = decision?.action === 'click';
+        const targetText = (preElementState?.text || '').toLowerCase();
+        const isReenableLink = targetText.includes('click here');
+        if (!isEntryAdPage || !isClick || !isReenableLink) return false;
+
+        try {
+            await page.locator('.modal, [role="dialog"], .modal-content').first().waitFor({ state: 'visible', timeout: 5000 });
+            console.log('   [Action] Entry Ad modal re-enable signal observed.');
+            return true;
+        } catch (_) {
+            return false;
         }
     }
 }
