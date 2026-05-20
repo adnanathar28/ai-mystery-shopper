@@ -8,7 +8,7 @@ module.exports = {
                     document.querySelectorAll('.ai-marker').forEach(el => el.remove());
                     document.querySelectorAll('[data-ai-id]').forEach(el => el.removeAttribute('data-ai-id'));
 
-                    const semanticSelector = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"]';
+                    const semanticSelector = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"], .modal-footer p, .modal [class*="close"], .modal [aria-label*="close" i]';
                     const semanticItems = Array.from(document.querySelectorAll(semanticSelector));
 
                     const allElements = document.querySelectorAll('div, span, li, img, h1, h2, h3, h4, h5, h6');
@@ -24,7 +24,16 @@ module.exports = {
                             return hasPointer && isVisible && !isScrollToTop;
                     });
 
-                    const allItems = [...new Set([...semanticItems, ...pointerItems])];
+                    const modalCloseTextItems = Array.from(document.querySelectorAll('.modal *')).filter(el => {
+                            const txt = (el.textContent || '').trim().toLowerCase();
+                            const isCloseText = txt === 'close' || txt === 'x' || txt.includes('close');
+                            const rect = el.getBoundingClientRect();
+                            const style = window.getComputedStyle(el);
+                            const visible = style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+                            return isCloseText && visible && rect.width > 2 && rect.height > 2;
+                    });
+
+                    const allItems = [...new Set([...semanticItems, ...pointerItems, ...modalCloseTextItems])];
 
                     let validCount = 0;
                     

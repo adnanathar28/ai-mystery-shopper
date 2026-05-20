@@ -568,8 +568,6 @@ class MysteryShopper {
             const trajectory = [];
             const noSignalCountsByTarget = {};
             const familyStats = {};
-            const uniqueSuffix = Math.floor(Math.random() * 9000) + 1000;
-            const dynamicGoal = `${goal} (IMPORTANT: Use the name 'Shopper Bot' and the unique email 'shopper_${Date.now()}_${uniqueSuffix}@example.com')`;
 
             while (!completed && stepCount < MAX_STEPS) {
                 stepCount++;
@@ -608,7 +606,7 @@ class MysteryShopper {
                 };
 
                 const prompt = systemPrompt(
-                    dynamicGoal,
+                    goal,
                     milestones,
                     elementMap,
                     config.persona,
@@ -1404,6 +1402,20 @@ class MysteryShopper {
     }
 
     async executeAction(page, decision) {
+        const modalCloseFallback = async () => {
+            const modalCloseLocator = page.locator(
+                '.modal-footer p:has-text("Close"), .modal button:has-text("Close"), .modal a:has-text("Close"), .modal [class*="close"], .modal [aria-label*="close" i]'
+            ).first();
+            if (await modalCloseLocator.count() > 0) {
+                await modalCloseLocator.scrollIntoViewIfNeeded();
+                await modalCloseLocator.click({ timeout: 3000 });
+                console.log('   [Action] Modal close fallback clicked.');
+                await page.waitForTimeout(1200);
+                return true;
+            }
+            return false;
+        };
+
         if (decision.action === 'scroll') {
             console.log("   [Action] Scrolling page...");
             await page.keyboard.press('PageDown');
@@ -1438,6 +1450,12 @@ class MysteryShopper {
         }
 
         if (decision.action === 'click' || decision.action === 'type') {
+            if ((decision.elementId === undefined || decision.elementId === null) && decision.action === 'click') {
+                const closed = await modalCloseFallback();
+                if (closed) return;
+                throw new Error('Click action missing elementId and no modal close fallback target found');
+            }
+
             const selector = `[data-ai-id="${decision.elementId}"]`;
             const locator = page.locator(selector);
 
