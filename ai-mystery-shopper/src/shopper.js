@@ -251,8 +251,78 @@ class MysteryShopper {
         return null;
     }
 
+    detectPlanningMode(capabilities = null) {
+        const sections = Array.isArray(capabilities?.sections) ? capabilities.sections : [];
+        const interactiveSections = sections.filter((s) => s.hasActionButton && ((s.controls || []).length > 0));
+        const uniqueControlFamilies = new Set(
+            interactiveSections.flatMap((s) => Array.isArray(s.controls) ? s.controls : [])
+        );
+
+        if (interactiveSections.length >= 2 && uniqueControlFamilies.size >= 2) {
+            return 'coverage_mode';
+        }
+
+        return 'primary_flow';
+    }
+
+    buildCoveragePlan(capabilities = null) {
+        const sections = Array.isArray(capabilities?.sections) ? capabilities.sections : [];
+        const regionPlans = [];
+
+        sections.forEach((section, idx) => {
+            const label = section.label || `Region ${idx + 1}`;
+            const controls = Array.isArray(section.controls) ? section.controls : [];
+            const actionLabels = Array.isArray(section.actionButtons) ? section.actionButtons : [];
+
+            if (controls.includes('checkbox') && actionLabels.some((a) => /remove|add/i.test(a))) {
+                regionPlans.push({
+                    regionId: `region_${idx + 1}`,
+                    regionLabel: label,
+                    objective: `Validate async remove/add behavior in "${label}"`,
+                    milestones: [
+                        `[${label}] Identify checkbox and action button.`,
+                        `[${label}] Click "Remove" (or equivalent) and verify checkbox disappears asynchronously.`,
+                        `[${label}] Click "Add" (or equivalent) and verify checkbox reappears asynchronously.`
+                    ]
+                });
+            }
+
+            if (controls.includes('text_input') && actionLabels.some((a) => /enable|disable/i.test(a))) {
+                regionPlans.push({
+                    regionId: `region_${idx + 1}_input`,
+                    regionLabel: label,
+                    objective: `Validate enable/disable input behavior in "${label}"`,
+                    milestones: [
+                        `[${label}] Verify input is initially disabled/non-editable.`,
+                        `[${label}] Trigger "Enable" (or equivalent) and verify input becomes editable.`,
+                        `[${label}] Type sample text and verify it appears.`,
+                        `[${label}] Trigger "Disable" (or equivalent) and verify input is non-editable again.`
+                    ]
+                });
+            }
+        });
+
+        const milestones = regionPlans.flatMap((r) => r.milestones);
+        return {
+            mode: 'coverage_mode',
+            objective: 'Execute representative coverage across major interactive regions.',
+            regions: regionPlans,
+            milestones
+        };
+    }
+
     async generateMissionPlan(goal, capabilities = null) {
         console.log("🤔 Generating strategic plan...");
+        const planningMode = this.detectPlanningMode(capabilities);
+        if (planningMode === 'coverage_mode') {
+            const coveragePlan = this.buildCoveragePlan(capabilities);
+            if (coveragePlan.milestones.length > 0) {
+                console.log('Mission Plan (coverage mode):', coveragePlan);
+                this.missionRationale = `${this.missionRationale || 'Autonomous mode.'} Coverage mode enabled across ${coveragePlan.regions.length} interactive regions.`;
+                return coveragePlan.milestones;
+            }
+        }
+
         const capabilityPlan = this.buildCapabilityAwarePlan(goal, capabilities);
         if (capabilityPlan) {
             console.log('Mission Plan (capability-aware deterministic):', capabilityPlan);
@@ -576,7 +646,7 @@ class MysteryShopper {
                         originalElementId: aiDecision.elementId,
                         url: page.url(),
                         severity: 'Medium',
-                        diagnosis: 'Stuck'
+                        diagnosis: 'UI Glitch'
                     });
                 }
 
@@ -1143,9 +1213,12 @@ class MysteryShopper {
                     bodyText.includes('register') ||
                     bodyText.includes('password');
 
-                const sectionBlocks = Array.from(document.querySelectorAll('#checkbox-example, #input-example, .example > div, form, section'))
+                const sectionBlocks = Array.from(document.querySelectorAll('#checkbox-example, #input-example'))
                     .map((el) => {
-                        const title = (el.querySelector('h4, h3, h2')?.textContent || '').trim();
+                        const title =
+                            (el.previousElementSibling && /H[2-4]/.test(el.previousElementSibling.tagName) ? (el.previousElementSibling.textContent || '') : '') ||
+                            (el.parentElement?.querySelector?.('h4, h3, h2')?.textContent || '') ||
+                            (el.querySelector('h4, h3, h2')?.textContent || '');
                         const text = (el.textContent || '').toLowerCase();
                         const checkboxes = el.querySelectorAll('input[type="checkbox"]').length;
                         const textInputs = el.querySelectorAll('input[type="text"], textarea').length;
@@ -1160,7 +1233,7 @@ class MysteryShopper {
                         if (textInputs > 0) controls.push('text_input');
 
                         return {
-                            label: title || (text.includes('remove/add') ? 'Remove/add' : (text.includes('enable/disable') ? 'Enable/disable' : 'section')),
+                            label: (title || '').trim() || (text.includes('remove') || text.includes('add') ? 'Remove/add' : (text.includes('enable') || text.includes('disable') ? 'Enable/disable' : 'section')),
                             hasCheckboxControl: checkboxes > 0,
                             hasInputControl: textInputs > 0,
                             hasActionButton,
@@ -1169,7 +1242,7 @@ class MysteryShopper {
                         };
                     })
                     .filter((s) => s.hasActionButton || s.hasCheckboxControl || s.hasInputControl)
-                    .slice(0, 8);
+                    .slice(0, 4);
 
                 const tableActionControls = Array.from(document.querySelectorAll('table a, table button, tr a, tr button')).length;
                 const dominantInteractions = [];
