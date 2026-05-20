@@ -166,6 +166,8 @@ class MysteryShopper {
             url: e.details?.url
         }));
 
+        
+
         const prompt = `
             You are a Lead QA Engineer. 
             Analyze this mission log and return ONLY a JSON object.
@@ -221,8 +223,47 @@ class MysteryShopper {
     }
 
 
-    async generateMissionPlan(goal) {
+    buildCapabilityAwarePlan(goal, capabilities = null) {
+        const sections = Array.isArray(capabilities?.sections) ? capabilities.sections : [];
+        const hasRemoveAddSection = sections.some((s) =>
+            (s.label || '').toLowerCase().includes('remove/add') &&
+            s.hasCheckboxControl &&
+            s.hasActionButton
+        );
+        const hasEnableDisableSection = sections.some((s) =>
+            (s.label || '').toLowerCase().includes('enable/disable') &&
+            s.hasInputControl &&
+            s.hasActionButton
+        );
+
+        if (hasRemoveAddSection && hasEnableDisableSection) {
+            return [
+                "Locate 'Remove/add' and 'Enable/disable' sections.",
+                "In 'Remove/add', click 'Remove' and verify checkbox disappears asynchronously.",
+                "In 'Remove/add', click 'Add' and verify checkbox reappears asynchronously.",
+                "In 'Enable/disable', click 'Enable' and verify input becomes enabled asynchronously.",
+                "Type text into enabled input to confirm interactivity.",
+                "Click 'Disable' and verify input becomes disabled asynchronously.",
+                "Attempt typing into disabled input and confirm it is blocked."
+            ];
+        }
+
+        return null;
+    }
+
+    async generateMissionPlan(goal, capabilities = null) {
         console.log("🤔 Generating strategic plan...");
+        const capabilityPlan = this.buildCapabilityAwarePlan(goal, capabilities);
+        if (capabilityPlan) {
+            console.log('Mission Plan (capability-aware deterministic):', capabilityPlan);
+            return capabilityPlan;
+        }
+
+        const sectionsSummary = Array.isArray(capabilities?.sections) && capabilities.sections.length
+            ? capabilities.sections.map((s) =>
+                `- ${s.label || 'section'}: controls=${(s.controls || []).join(', ') || 'none'}, actions=${(s.actionButtons || []).join(', ') || 'none'}`
+            ).join('\n')
+            : '- unavailable';
         const prompt = `
             You are an autonomous QA strategist.
 
@@ -233,6 +274,10 @@ class MysteryShopper {
             - the type of page
             - interaction patterns
             - expected browser behavior
+            - section-level capability constraints
+
+            SECTION CAPABILITIES:
+            ${sectionsSummary}
 
             Plans may include:
             - interaction testing
@@ -246,6 +291,7 @@ class MysteryShopper {
             ONLY if relevant.
 
             Do not assume every site contains forms, submissions, or full-page transitions.
+            Never assume actions in one section should affect controls in another section unless explicit evidence shows that dependency.
 
             RETURN ONLY A RAW JSON ARRAY OF STRINGS.
             Example: ["Find Signup CTA", "Fill registration form", "Submit and wait for redirect", "Verify Dashboard access"]
@@ -435,7 +481,7 @@ class MysteryShopper {
                 this.missionRationale = 'Goal was provided manually.';
             }
 
-            milestones = await this.generateMissionPlan(goal);
+            milestones = await this.generateMissionPlan(goal, pageCapabilities);
             const currentPageClass = await this.classifyPage(page);
             console.log(`[Shopper] Page class detected: ${currentPageClass}`);
 
@@ -1097,6 +1143,34 @@ class MysteryShopper {
                     bodyText.includes('register') ||
                     bodyText.includes('password');
 
+                const sectionBlocks = Array.from(document.querySelectorAll('#checkbox-example, #input-example, .example > div, form, section'))
+                    .map((el) => {
+                        const title = (el.querySelector('h4, h3, h2')?.textContent || '').trim();
+                        const text = (el.textContent || '').toLowerCase();
+                        const checkboxes = el.querySelectorAll('input[type="checkbox"]').length;
+                        const textInputs = el.querySelectorAll('input[type="text"], textarea').length;
+                        const buttons = Array.from(el.querySelectorAll('button, input[type="button"], input[type="submit"]'))
+                            .map((b) => (b.textContent || b.getAttribute('value') || '').trim())
+                            .filter(Boolean);
+
+                        const hasActionButton = buttons.length > 0;
+                        const actionButtons = buttons.slice(0, 4);
+                        const controls = [];
+                        if (checkboxes > 0) controls.push('checkbox');
+                        if (textInputs > 0) controls.push('text_input');
+
+                        return {
+                            label: title || (text.includes('remove/add') ? 'Remove/add' : (text.includes('enable/disable') ? 'Enable/disable' : 'section')),
+                            hasCheckboxControl: checkboxes > 0,
+                            hasInputControl: textInputs > 0,
+                            hasActionButton,
+                            actionButtons,
+                            controls
+                        };
+                    })
+                    .filter((s) => s.hasActionButton || s.hasCheckboxControl || s.hasInputControl)
+                    .slice(0, 8);
+
                 const tableActionControls = Array.from(document.querySelectorAll('table a, table button, tr a, tr button')).length;
                 const dominantInteractions = [];
                 if (visibleButtons > 0) dominantInteractions.push('buttons');
@@ -1117,7 +1191,8 @@ class MysteryShopper {
                     hasEditableFields: editableInputs > 0,
                     hasButtons: visibleButtons > 0,
                     dominantInteractions,
-                    likelySandbox
+                    likelySandbox,
+                    sections: sectionBlocks
                 };
             });
         } catch (e) {
@@ -1129,7 +1204,8 @@ class MysteryShopper {
                 hasEditableFields: false,
                 hasButtons: false,
                 dominantInteractions: ['unknown'],
-                likelySandbox: false
+                likelySandbox: false,
+                sections: []
             };
         }
     }
@@ -1321,3 +1397,4 @@ class MysteryShopper {
 
 
 module.exports = MysteryShopper;
+
