@@ -359,6 +359,8 @@ class MysteryShopper {
             - async behavior
             - form submission
             ONLY if relevant.
+            Do NOT include browser refresh/reload/back/forward steps in milestones.
+            Use only interactions that can be performed via: click, type, scroll, submit, select, finish.
 
             Do not assume every site contains forms, submissions, or full-page transitions.
             Never assume actions in one section should affect controls in another section unless explicit evidence shows that dependency.
