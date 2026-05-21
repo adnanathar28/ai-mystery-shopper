@@ -89,6 +89,8 @@ to change the email address to something different.
 4. Select (ID, option): Use this ONLY for dropdown menus (<select> tags). Provide the text of the option you want to select in the 'option' field."
 5. If you see the same action failing in your trajectory, DO NOT repeat it. 
 Try a different element, scroll, or change your input data.
+6. Do NOT trigger a "re-enable/reopen/retry" control if the target feature is already active/visible and the milestone is already satisfied.
+7. Before each action, verify whether the current milestone is already satisfied. If satisfied, move to the next milestone; if all milestones are satisfied, use action "finish".
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
 If evidence is weak, prefer a validating follow-up action over immediate failure claims.
