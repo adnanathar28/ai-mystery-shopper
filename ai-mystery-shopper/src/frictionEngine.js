@@ -57,39 +57,44 @@ class FrictionEngine {
   getReport() {
     const rawScore = this.calculateScore();
     
-    // CRITICAL FIX 2: Define what "Terminal Failure" actually means
-    // We must include "Backend Error" as a failure, even if the AI clicks 'finish'.
-    const failureDiagnoses = ['Stuck', 'CRITICAL_FAILURE', 'Backend Failure', 'Frontend Failure', 'Missing Route'];
-    
-    const hasTerminalFailure = this.events.some(e => 
-      failureDiagnoses.includes(e.details?.diagnosis) || 
-      e.details?.severity === 'Critical'
-    );
-
     const hasFinishAction = this.events.some(e => e.details?.action === 'finish');
-    
-    // A run is ONLY successful if it finished AND had no terminal diagnoses.
-    const trulySucceeded = hasFinishAction && !hasTerminalFailure;
+    const thoughtEvents = this.events.filter((e) => e.type === 'ai_thought');
+    const lastThought = thoughtEvents.length ? thoughtEvents[thoughtEvents.length - 1] : null;
+
+    // Terminal failure is based on unresolved end-state, not transient mid-run spikes.
+    const unresolvedTerminalDiagnoses = new Set(['Stuck', 'CRITICAL_FAILURE', 'Backend Failure', 'Frontend Failure', 'Missing Route']);
+    const unresolvedTerminal =
+      !!lastThought &&
+      (unresolvedTerminalDiagnoses.has(lastThought.details?.diagnosis) || lastThought.details?.severity === 'Critical');
+
+    // If mission finished and ended healthy-ish, treat earlier failures as recovered/transient.
+    const trulySucceeded = hasFinishAction && !unresolvedTerminal;
 
     let finalScore = rawScore;
 
     if (trulySucceeded) {
       // Logic for actual smooth runs...
       const totalFrustration = this.events.reduce((acc, e) => acc + (e.details?.aiFrustrationLevel || 0), 0);
-      finalScore = Math.min(rawScore, (totalFrustration > 2 ? 30 : 10));
+      finalScore = Math.min(rawScore, (totalFrustration > 2 ? 30 : 15));
     } else {
       // If it failed or was blocked, ensure the score reflects the gravity
-      // A backend error should never result in a score below 80.
-      if (hasTerminalFailure) {
+      if (unresolvedTerminal) {
         finalScore = Math.max(rawScore, 80);
       }
     }
 
     // CRITICAL FIX 3: Better Diagnosis Picking
-    const issues = this.events.filter(e => e.details?.diagnosis && e.details.diagnosis !== 'Healthy');
+    const issues = trulySucceeded
+      ? thoughtEvents.filter((e) => {
+          const d = e.details?.diagnosis;
+          return d && !['Healthy', 'UI Glitch', 'AUTH_REQUIRED'].includes(d);
+        })
+      : this.events.filter(e => e.details?.diagnosis && e.details.diagnosis !== 'Healthy');
     let topDiagnosis = 'Healthy';
     
-    if (issues.length > 0) {
+    if (unresolvedTerminal && lastThought?.details?.diagnosis) {
+      topDiagnosis = lastThought.details.diagnosis;
+    } else if (issues.length > 0) {
       // Pick the most severe diagnosis found in the logs
       const priorityOrder = ['Backend Failure', 'Frontend Failure', 'Missing Route', 'Broken Navigation', 'Dead Link', 'Stuck', 'UI Glitch'];
       topDiagnosis = issues.sort((a, b) => {
