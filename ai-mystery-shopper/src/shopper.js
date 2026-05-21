@@ -1122,7 +1122,17 @@ class MysteryShopper {
         const tag = preElementState.tag || 'unknown';
         const role = preElementState.role || '';
         const type = preElementState.type || '';
-        const text = (preElementState.text || '').replace(/\d+/g, '#').slice(0, 24);
+        const rawText = (preElementState.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const textToken = rawText.slice(0, 24) || 'no_text';
+
+        // Anchor clicks should preserve semantic target differences (e.g., 200/301/404/500 links).
+        if (action === 'click' && tag === 'a') {
+            const href = (preElementState.href || '').toLowerCase();
+            const hrefToken = href ? href.replace(/^https?:\/\/[^/]+/i, '').slice(0, 64) : 'no_href';
+            return `${action}:${tag}:${hrefToken}:${textToken}`;
+        }
+
+        const text = rawText.replace(/\d+/g, '#').slice(0, 24) || 'no_text';
         return `${action}:${tag}:${type}:${role}:${text}`;
     }
 
