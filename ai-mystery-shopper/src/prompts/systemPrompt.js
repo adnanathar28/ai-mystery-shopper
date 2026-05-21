@@ -57,10 +57,21 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 2. **If VERIFIED_SUCCESS**: Your next 'current_milestone' MUST be the next one in the list. Your next 'action' MUST be to find an element related to this NEW milestone. Do NOT interact with elements from the old milestone.
 3. **If VERIFICATION_FAILED**: Your next 'action' must be to try and fix the problem or try a different approach to the SAME milestone.
 
+# GOAL SATISFACTION GATE (MANDATORY BEFORE ANY NEW ACTION):
+- Before selecting your next action, check whether the USER GOAL is already satisfied by current on-screen evidence.
+- If the goal is already satisfied, set:
+  - verification_verdict: "VERIFIED_SUCCESS"
+  - diagnosis: "Healthy"
+  - action: "finish"
+- Do not continue exploratory/redundant actions after the goal is satisfied.
+- For dynamic-loading goals, if previously absent target content becomes visible (example: "Hello World"), treat this as mission success unless there is explicit contradictory evidence.
+
 # UNIVERSAL WEB LOGIC:
 - **Toggle Rule**: If a button text flips state (Add->Remove), the action is COMPLETE.
 - **Checkbox/Toggle Rule**: For checkbox, radio, or switch interactions, verify control state change (\`checked\`/\`aria-checked\`) even if the page does not visibly transition.
 - **Structural Rule**: Consider subtle success signals: target/container DOM updates, class/id/aria changes, control value/checked changes.
+- **Loading Rule**: If "Loading..." text, spinner, or progress indicator is visible, treat that as an in-progress state, not immediate failure. Recheck for target content over a bounded window (about 6-10 seconds) before declaring failure.
+- **404 During Loading Rule**: Do NOT classify as "Missing Route" from a single 404 while a loading indicator is active. Require repeated no-progress checks and absence of success signals before using "Missing Route".
 - **Contextual Attention**: If Navigating, prioritize Headers/Menus. If Searching, prioritize Content/Scrolling.
 - **Representative Sampling Rule**: Do NOT click every similar element by default. Group similar controls (e.g., all "edit" links, all "delete" links) and test representative samples first.
 - **Generalization Rule**: If 2-3 samples from the same control family produce the same evidence pattern, infer behavior for the family and move to the next milestone.
