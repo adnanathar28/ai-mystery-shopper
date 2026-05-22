@@ -20,6 +20,7 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
 - If page class is "crud_table", prioritize row-level effects and action-column outcomes.
 - If page class is "transactional_form", prioritize field validation, submit outcome, and navigation/result state.
 - If page class is "auth_gate_or_error", diagnose blockers clearly and avoid random navigation.
+- For "demo_challenge" pages, URL hash transitions (for example #edit, #delete), control-state changes, and structural mutations are valid success evidence even when the screen appears visually similar.
 
 # HISTORY
 - Last Action: "${history.lastActionTaken}"
@@ -29,6 +30,7 @@ ELEMENT MAP (ID -> Text): ${JSON.stringify(elementMap)}
 # TECHNICAL CONTEXT
 - Network Errors: ${JSON.stringify(history.technicalLogs.networkErrors)}
 - Console Errors: ${JSON.stringify(history.technicalLogs.consoleErrors)}
+- You MUST use this technical context as available system evidence. Do NOT claim you lack access to logs or structural evidence.
 
 # RECENT TRAJECTORY (Memory):
 ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${t.reasoning}". Result: ${t.result}`).join('\n')}
