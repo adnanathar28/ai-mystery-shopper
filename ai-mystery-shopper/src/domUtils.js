@@ -8,7 +8,7 @@ module.exports = {
                     document.querySelectorAll('.ai-marker').forEach(el => el.remove());
                     document.querySelectorAll('[data-ai-id]').forEach(el => el.removeAttribute('data-ai-id'));
 
-                    const semanticSelector = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"], .modal-footer p, .modal [class*="close"], .modal [aria-label*="close" i]';
+                    const semanticSelector = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"], .modal-footer p, .modal [class*="close"], .modal [aria-label*="close" i], .close, .closebtn, .flash .close, [aria-label*="close" i], [title*="close" i]';
                     const semanticItems = Array.from(document.querySelectorAll(semanticSelector));
 
                     const allElements = document.querySelectorAll('div, span, li, img, h1, h2, h3, h4, h5, h6');
@@ -40,8 +40,15 @@ module.exports = {
                     allItems.forEach(el => {
                         const rect = el.getBoundingClientRect();
                         const style = window.getComputedStyle(el);
+                        const closeHint = `${el.getAttribute('class') || ''} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${(el.textContent || '').trim()}`.toLowerCase();
+                        const isCloseControl =
+                            closeHint.includes('close') ||
+                            closeHint === 'x' ||
+                            closeHint.endsWith(' x') ||
+                            closeHint.startsWith('x ');
+                        const minSize = isCloseControl ? 8 : 2;
 
-                        if (rect.width > 2 && rect.height > 2 && 
+                        if (rect.width > minSize && rect.height > minSize && 
                             style.visibility !== 'hidden' && 
                             style.display !== 'none' && 
                             style.opacity !== '0') {
