@@ -397,6 +397,9 @@ class MysteryShopper {
 
         let context;
         let page;
+        let mainPage;
+        let childPage = null;
+        let activeWindow = 'main';
         let milestones = [];
         let infraFailure = null;
         const sessionLogs = { errors: [], console: [] };
@@ -432,6 +435,7 @@ class MysteryShopper {
             });
 
             page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+            mainPage = page;
 
             page.on('response', (response) => {
                 if (response.status() >= 400) {
@@ -754,7 +758,15 @@ class MysteryShopper {
                     }
                     await domUtils.cleanupMarkers(page);
                     const preActionUrl = page.url();
-                    await this.executeAction(page, finalDecision);
+                    const windowState = await this.executeAction(page, finalDecision, {
+                        mainPage,
+                        childPage,
+                        activeWindow
+                    });
+                    page = windowState.page;
+                    mainPage = windowState.mainPage;
+                    childPage = windowState.childPage;
+                    activeWindow = windowState.activeWindow;
                     await this.waitForEntryAdReenableSignal(page, finalDecision, preElementState);
                     lastActionResult = 'Success';
                     postState = await this.capturePageState(page);
@@ -1447,7 +1459,15 @@ class MysteryShopper {
         }
     }
 
-    async executeAction(page, decision) {
+    async executeAction(page, decision, windowState = null) {
+        const ws = windowState || { mainPage: page, childPage: null, activeWindow: 'main' };
+        const toState = (currentPage) => ({
+            page: currentPage,
+            mainPage: ws.mainPage || currentPage,
+            childPage: ws.childPage || null,
+            activeWindow: ws.activeWindow || 'main'
+        });
+
         const modalCloseFallback = async () => {
             const modalCloseLocator = page.locator(
                 '.modal-footer p:has-text("Close"), .modal button:has-text("Close"), .modal a:has-text("Close"), .modal [class*="close"], .modal [aria-label*="close" i]'
@@ -1466,10 +1486,34 @@ class MysteryShopper {
             console.log("   [Action] Scrolling page...");
             await page.keyboard.press('PageDown');
             await page.waitForTimeout(1000);
-            return;
+            return toState(page);
         }
 
-        if (decision.action === 'finish') return;
+        if (decision.action === 'finish') return toState(page);
+
+        if (decision.action === 'switch_window') {
+            if (ws.activeWindow === 'main' && ws.childPage && !ws.childPage.isClosed()) {
+                page = ws.childPage;
+                ws.activeWindow = 'child';
+                console.log('   [Action] Switched to child window.');
+            } else if (ws.mainPage && !ws.mainPage.isClosed()) {
+                page = ws.mainPage;
+                ws.activeWindow = 'main';
+                console.log('   [Action] Switched to main window.');
+            }
+            return toState(page);
+        }
+
+        if (decision.action === 'close_window') {
+            if (ws.childPage && !ws.childPage.isClosed()) {
+                await ws.childPage.close().catch(() => {});
+                ws.childPage = null;
+                page = ws.mainPage && !ws.mainPage.isClosed() ? ws.mainPage : page;
+                ws.activeWindow = 'main';
+                console.log('   [Action] Closed child window and returned to main.');
+            }
+            return toState(page);
+        }
 
         if (decision.action === 'submit') {
             const selector = decision.elementId ? `[data-ai-id="${decision.elementId}"]` : 'button[type="submit"]';
@@ -1479,7 +1523,7 @@ class MysteryShopper {
             await submitLocator.scrollIntoViewIfNeeded();
             await submitLocator.click({ timeout: 7000 });
             console.log('   [Action] Explicit submit clicked.');
-            return;
+            return toState(page);
         }
 
         if (decision.action === 'select') {
@@ -1492,13 +1536,13 @@ class MysteryShopper {
             
             console.log(`   [Action] Selected option "${decision.option || decision.text}" for ID: ${decision.elementId}`);
             await page.waitForTimeout(1000);
-            return;
+            return toState(page);
         }
 
         if (decision.action === 'click' || decision.action === 'type') {
             if ((decision.elementId === undefined || decision.elementId === null) && decision.action === 'click') {
                 const closed = await modalCloseFallback();
-                if (closed) return;
+                if (closed) return toState(page);
                 throw new Error('Click action missing elementId and no modal close fallback target found');
             }
 
@@ -1515,8 +1559,18 @@ class MysteryShopper {
             }, selector);
 
             if (decision.action === 'click') {
+                const popupPromise = page.context().waitForEvent('page', { timeout: 2000 }).catch(() => null);
                 await locator.click({ timeout: 7000 });
                 console.log(`   [Action] Clicked element ID: ${decision.elementId}`);
+                const popupPage = await popupPromise;
+                if (popupPage) {
+                    await popupPage.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
+                    ws.childPage = popupPage;
+                    ws.mainPage = ws.mainPage || page;
+                    ws.activeWindow = 'child';
+                    page = popupPage;
+                    console.log('   [Action] New window detected and focused.');
+                }
             } else if (decision.action === 'type') {
                 // Mobile-safe input: fill directly, do not auto-submit with Enter.
                 await locator.fill(decision.text || '');
@@ -1528,7 +1582,10 @@ class MysteryShopper {
             } else {
                 await page.waitForTimeout(1500);
             }
+            return toState(page);
         }
+
+        return toState(page);
     }
 
     async waitForEntryAdReenableSignal(page, decision, preElementState) {

@@ -5,7 +5,7 @@ const AIDecisionSchema = z.object({
   verification_reasoning: z.string().min(1),
   current_page_description: z.string().min(1),
   current_milestone: z.string().min(1),
-  action: z.enum(['click', 'type', 'scroll', 'submit', 'finish', 'select']),
+  action: z.enum(['click', 'type', 'scroll', 'submit', 'finish', 'select', 'switch_window', 'close_window']),
   elementId: z.coerce.number().int().optional(),
   text: z.string().optional().default(''),
   option: z.string().optional(),
@@ -26,7 +26,7 @@ const AIDecisionSchema = z.object({
   severity: z.enum(['None', 'Low', 'Medium', 'High', 'Critical'])
 }).superRefine((decision, ctx) => {
   const needsPositiveId = ['click', 'type', 'select', 'submit'].includes(decision.action);
-  const allowsMissingOrSentinel = ['scroll', 'finish'].includes(decision.action);
+  const allowsMissingOrSentinel = ['scroll', 'finish', 'switch_window', 'close_window'].includes(decision.action);
 
   if (needsPositiveId) {
     if (decision.elementId === undefined || decision.elementId <= 0) {
