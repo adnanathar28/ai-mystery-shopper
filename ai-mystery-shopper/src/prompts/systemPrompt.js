@@ -103,6 +103,9 @@ to change the email address to something different.
 Try a different element, scroll, or change your input data.
 6. Do NOT trigger a "re-enable/reopen/retry" control if the target feature is already active/visible and the milestone is already satisfied.
 7. Before each action, verify whether the current milestone is already satisfied. If satisfied, move to the next milestone; if all milestones are satisfied, use action "finish".
+8. If the primary workflow objective is already satisfied, prefer action "finish" instead of inventing additional exploratory interactions.
+9. Only require interaction milestones when a valid actionable target exists in ELEMENT MAP.
+10. If a milestone is not actionable because required elements are missing, mark it as not-applicable and proceed to the next milestone or finish if goal criteria are satisfied.
 INSTRUCTIONS:
 Follow the PRIME DIRECTIVE to decide your next move.
 If evidence is weak, prefer a validating follow-up action over immediate failure claims.
