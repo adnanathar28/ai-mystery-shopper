@@ -729,7 +729,7 @@ class MysteryShopper {
                     preElementState = await this.captureElementState(page, finalDecision);
                     preLocalFingerprint = await this.captureLocalFingerprint(page, finalDecision);
                     const actionFamilyKey = this.buildActionFamilyKey(finalDecision, preElementState);
-                    if (this.shouldSkipLowNovelty(actionFamilyKey, familyStats)) {
+                    if (this.shouldSkipLowNovelty(actionFamilyKey, familyStats, finalDecision)) {
                         lastActionResult = `SKIPPED: low novelty family (${actionFamilyKey})`;
                         this.frictionEngine.logEvent('ai_thought', {
                             thought: `${finalDecision.reasoning} [Skipped due to low novelty in family ${actionFamilyKey}]`,
@@ -997,6 +997,7 @@ class MysteryShopper {
                 value: typeof el.value === 'string' ? el.value : '',
                 checked: !!el.checked,
                 ariaChecked: el.getAttribute('aria-checked') || '',
+                href: el.getAttribute('href') || '',
                 text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60).toLowerCase(),
                 isToggle
             };
@@ -1136,7 +1137,20 @@ class MysteryShopper {
         return `${action}:${tag}:${type}:${role}:${text}`;
     }
 
-    shouldSkipLowNovelty(familyKey, familyStats) {
+    shouldSkipLowNovelty(familyKey, familyStats, decision = null) {
+        const decisionText = ((decision?.text || '') + ' ' + (decision?.current_milestone || '')).toLowerCase();
+        const isAnchorClick = decision?.action === 'click' && familyKey.startsWith('click:a:');
+        const isReturnLikeAction =
+            isAnchorClick &&
+            (decisionText.includes('return') ||
+                decisionText.includes('back') ||
+                decisionText.includes('index') ||
+                decisionText.includes('status codes') ||
+                familyKey.includes(':here'));
+
+        // Never novelty-skip return/index navigation actions; they are route-progress critical.
+        if (isReturnLikeAction) return false;
+
         const stats = familyStats[familyKey];
         if (!stats) return false;
         const minSamples = 2;
