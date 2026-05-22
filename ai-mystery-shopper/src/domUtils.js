@@ -53,14 +53,49 @@ module.exports = {
                             style.display !== 'none' && 
                             style.opacity !== '0') {
                             
-                            const isInsideModal = el.closest('.modal, [role="dialog"], #orderModal'); 
+                            const isInsideModal = el.closest('.modal, [role="dialog"], #orderModal');
                             const centerX = rect.left + rect.width / 2;
                             const centerY = rect.top + rect.height / 2;
                             const topElement = document.elementFromPoint(centerX, centerY);
 
-                            
+                            const pointMatchesElement = (x, y) => {
+                                const hit = document.elementFromPoint(x, y);
+                                return !!(hit && (el.contains(hit) || hit.contains(el)));
+                            };
 
-                            const isVisibleAtPoint = isInsideModal || (topElement && (el.contains(topElement) || topElement.contains(el)));
+                            let markerX = centerX;
+                            let markerY = centerY;
+                            let hasClickablePoint = pointMatchesElement(centerX, centerY);
+
+                            // Tiny/absolute close controls can miss center hit-testing.
+                            // Probe nearby points and anchor marker to a validated clickable point.
+                            if (!hasClickablePoint && isCloseControl) {
+                                const pad = 1;
+                                const probePoints = [
+                                    [rect.left + pad, rect.top + pad],
+                                    [rect.right - pad, rect.top + pad],
+                                    [rect.left + pad, rect.bottom - pad],
+                                    [rect.right - pad, rect.bottom - pad],
+                                    [rect.left + rect.width * 0.25, rect.top + rect.height * 0.25],
+                                    [rect.left + rect.width * 0.75, rect.top + rect.height * 0.25],
+                                    [rect.left + rect.width * 0.25, rect.top + rect.height * 0.75],
+                                    [rect.left + rect.width * 0.75, rect.top + rect.height * 0.75]
+                                ];
+
+                                for (const [px, py] of probePoints) {
+                                    if (pointMatchesElement(px, py)) {
+                                        markerX = px;
+                                        markerY = py;
+                                        hasClickablePoint = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            const isVisibleAtPoint =
+                                isInsideModal ||
+                                hasClickablePoint ||
+                                (topElement && (el.contains(topElement) || topElement.contains(el)));
 
                             if (isVisibleAtPoint) {
                                 el.setAttribute('data-ai-id', idCounter);
@@ -91,8 +126,8 @@ module.exports = {
                                 badge.className = 'ai-marker';
                                 badge.textContent = idCounter;
                                 badge.style.position = 'absolute';
-                                badge.style.left = (window.scrollX + rect.left) + 'px';
-                                badge.style.top = (window.scrollY + rect.top) + 'px';
+                                badge.style.left = (window.scrollX + markerX) + 'px';
+                                badge.style.top = (window.scrollY + markerY) + 'px';
                                 badge.style.backgroundColor = '#ff0000';
                                 badge.style.color = 'white';
                                 badge.style.fontSize = '12px';
