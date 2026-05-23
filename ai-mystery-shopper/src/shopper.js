@@ -11,6 +11,14 @@ const DEVICES = require('./config/devices'); // IMPORTED
 const { AIDecisionSchema, normalizeDecisionShape } = require('./schemas/aiDecisionSchema');
 const { sanitizeDecision } = require('./decisionSanitizer');
 const { evaluateContract } = require('./evidenceContracts');
+const {
+    isJsAlertsPage,
+    getDeterministicMilestonesForUrl,
+    normalizeDialogActionToClick,
+    shouldNeverNoveltySkipDialogFamily,
+    updateJsDialogOutcomes,
+    hasAllJsDialogOutcomes
+} = require('./policies/runtimePolicies');
 
 const USER_DATA_DIR = path.join(__dirname, '../public/user_data');
 
@@ -579,20 +587,10 @@ class MysteryShopper {
                 this.missionRationale = 'Goal was provided manually.';
             }
 
-            const isJsAlertsPage = /\/javascript_alerts(?:\/)?$/i.test(url || '');
-            if (isJsAlertsPage) {
-                milestones = [
-                    'Click JS Alert trigger.',
-                    'Verify alert outcome text appears and interaction remains stable.',
-                    'Click JS Confirm trigger and accept.',
-                    'Verify result shows confirm accepted (Ok).',
-                    'Click JS Confirm trigger and cancel.',
-                    'Verify result shows confirm cancelled.',
-                    'Click JS Prompt trigger, enter sample text, and accept.',
-                    'Verify result shows entered prompt text.',
-                    'Click JS Prompt trigger and cancel.',
-                    'Verify result shows prompt cancellation.'
-                ];
+            const jsAlertsMode = isJsAlertsPage(url);
+            const deterministicMilestones = getDeterministicMilestonesForUrl(url);
+            if (deterministicMilestones) {
+                milestones = deterministicMilestones;
                 console.log('Mission Plan (deterministic javascript_alerts):', milestones);
             } else {
                 milestones = await this.generateMissionPlan(goal, pageCapabilities);
@@ -694,23 +692,7 @@ class MysteryShopper {
                     });
                 }
 
-                if (['accept_dialog', 'dismiss_dialog', 'prompt_dialog'].includes(finalDecision.action)) {
-                    const milestoneText = `${finalDecision.current_milestone || ''} ${finalDecision.reasoning || ''}`.toLowerCase();
-                    const dialogKind = milestoneText.includes('prompt')
-                        ? 'prompt'
-                        : milestoneText.includes('confirm')
-                            ? 'confirm'
-                            : 'alert';
-                    const dialogButtonId = this.findDialogTriggerId(elementMap, dialogKind);
-                    if (dialogButtonId) {
-                        finalDecision = {
-                            ...finalDecision,
-                            action: 'click',
-                            elementId: dialogButtonId,
-                            reasoning: `${finalDecision.reasoning || ''} [Dialog action normalized to click trigger]`.trim()
-                        };
-                    }
-                }
+                finalDecision = normalizeDialogActionToClick(finalDecision, elementMap);
 
                 if (finalDecision.elementId === lastActionId && finalDecision.action === lastActionTaken) {
                     sameActionCount++;
@@ -871,16 +853,9 @@ class MysteryShopper {
                         result: lastActionResult
                     });
 
-                    if (isJsAlertsPage) {
-                        const resultText = ((postState && postState.jsResultText) || '').toLowerCase();
-                        if (resultText.includes('successfuly clicked an alert')) jsDialogOutcomes.add('alert');
-                        if (resultText.includes('you clicked: ok')) jsDialogOutcomes.add('confirm_ok');
-                        if (resultText.includes('you clicked: cancel')) jsDialogOutcomes.add('confirm_cancel');
-                        if (resultText.includes('you entered: null')) jsDialogOutcomes.add('prompt_cancel');
-                        if (resultText.includes('you entered:') && !resultText.includes('null')) jsDialogOutcomes.add('prompt_text');
-
-                        const required = ['alert', 'confirm_ok', 'confirm_cancel', 'prompt_text', 'prompt_cancel'];
-                        if (required.every((k) => jsDialogOutcomes.has(k))) {
+                    if (jsAlertsMode) {
+                        updateJsDialogOutcomes((postState && postState.jsResultText) || '', jsDialogOutcomes);
+                        if (hasAllJsDialogOutcomes(jsDialogOutcomes)) {
                             this.frictionEngine.logEvent('action_finish', { action: 'finish', reason: 'js_dialog_outcomes_complete' });
                             completed = true;
                             break;
@@ -1232,28 +1207,9 @@ class MysteryShopper {
         return `${action}:${tag}:${type}:${role}:${text}`;
     }
 
-    findDialogTriggerId(elementMap, dialogKind) {
-        const mapEntries = Object.entries(elementMap || {});
-        const kindNeedle = dialogKind === 'prompt' ? 'js prompt' : (dialogKind === 'confirm' ? 'js confirm' : 'js alert');
-        const exact = mapEntries.find(([, label]) => String(label || '').toLowerCase().includes(kindNeedle));
-        if (exact) return Number(exact[0]);
-        const generic = mapEntries.find(([, label]) => String(label || '').toLowerCase().includes('click for js'));
-        return generic ? Number(generic[0]) : null;
-    }
-
     shouldSkipLowNovelty(familyKey, familyStats, decision = null) {
         const decisionText = ((decision?.text || '') + ' ' + (decision?.current_milestone || '')).toLowerCase();
-        const isJsDialogTriggerFamily =
-            familyKey.includes('js alert') ||
-            familyKey.includes('js confirm') ||
-            familyKey.includes('js prompt') ||
-            decisionText.includes('javascript alert') ||
-            decisionText.includes('javascript confirm') ||
-            decisionText.includes('javascript prompt') ||
-            decisionText.includes('js alert') ||
-            decisionText.includes('js confirm') ||
-            decisionText.includes('js prompt');
-        if (isJsDialogTriggerFamily) return false;
+        if (shouldNeverNoveltySkipDialogFamily(familyKey, decisionText)) return false;
 
         const isAnchorClick = decision?.action === 'click' && familyKey.startsWith('click:a:');
         const isReturnLikeAction =
