@@ -37,3 +37,12 @@ const PORT = 3001;
 app.listen(PORT, () => {
   console.log(`AI Shopper Backend running on port ${PORT}`);
 });
+
+app.get('/api/human/status', (req, res) => {
+  res.json(shopper.getHumanGateStatus());
+});
+
+app.post('/api/human/resume', (req, res) => {
+  const result = shopper.resumeHumanGate();
+  res.json(result);
+});

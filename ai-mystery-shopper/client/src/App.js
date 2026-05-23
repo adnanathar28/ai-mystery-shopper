@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { AlertCircle, CheckCircle, Play, Loader, Video } from 'lucide-react';
 import './App.css';
@@ -13,12 +13,45 @@ function App() {
   const [device, setDevice] = useState('mobile');
   const [network, setNetwork] = useState('WiFi');
   const [locale, setLocale] = useState('EN');
+  const [humanGate, setHumanGate] = useState({ active: false, reason: '', url: '' });
+  const pollRef = useRef(null);
+
+  const stopHumanPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startHumanPolling = () => {
+    stopHumanPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await axios.get('http://localhost:3001/api/human/status');
+        setHumanGate(status.data || { active: false, reason: '', url: '' });
+      } catch (_) {
+        // Keep silent; normal if backend restarts.
+      }
+    }, 2000);
+  };
+
+  const resumeMission = async () => {
+    try {
+      await axios.post('http://localhost:3001/api/human/resume');
+      setHumanGate({ active: false, reason: '', url: '' });
+    } catch (err) {
+      console.error(err);
+      setError('Unable to resume mission. Ensure backend is running.');
+    }
+  };
 
   const runTest = async () => {
     if (!url) return alert("Please enter a target URL");
     setLoading(true);
     setReport(null);
     setError('');
+    setHumanGate({ active: false, reason: '', url: '' });
+    startHumanPolling();
 
     try {
       // Sending persona and device to the backend
@@ -35,9 +68,14 @@ function App() {
       setError('Error: Ensure backend is running on port 3001.');
       console.error(err);
     } finally {
+      stopHumanPolling();
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    return () => stopHumanPolling();
+  }, []);
 
   return (
     <div className="app-container">
@@ -118,6 +156,17 @@ function App() {
       </div>
 
       {error && <div className="error-msg">{error}</div>}
+
+      {loading && humanGate.active && (
+        <div className="error-msg" style={{ borderColor: '#f59e0b', color: '#fef3c7', background: '#78350f' }}>
+          <div style={{ marginBottom: '10px' }}>
+            Human action required: {humanGate.reason || 'Security challenge detected.'}
+          </div>
+          <button onClick={resumeMission} className="start-btn" style={{ maxWidth: '280px' }}>
+            Resume After Solving Challenge
+          </button>
+        </div>
+      )}
 
       {report && (
         <div className="results-area">

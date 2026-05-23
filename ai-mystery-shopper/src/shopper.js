@@ -28,6 +28,92 @@ class MysteryShopper {
         this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL);
         this.missionRationale = null;
         this.nextDialogResolution = null;
+        this.humanGate = {
+            active: false,
+            reason: '',
+            url: '',
+            since: null,
+            resolver: null
+        };
+    }
+
+    getHumanGateStatus() {
+        return {
+            active: !!this.humanGate.active,
+            reason: this.humanGate.reason || '',
+            url: this.humanGate.url || '',
+            since: this.humanGate.since || null
+        };
+    }
+
+    resumeHumanGate() {
+        if (!this.humanGate.active || !this.humanGate.resolver) {
+            return { resumed: false, message: 'No mission is waiting for human intervention.' };
+        }
+
+        const resolver = this.humanGate.resolver;
+        this.humanGate.active = false;
+        this.humanGate.resolver = null;
+        resolver();
+        return { resumed: true, message: 'Mission resumed.' };
+    }
+
+    async detectHumanChallenge(page) {
+        try {
+            const currentUrl = page.url().toLowerCase();
+            const urlChallenge =
+                currentUrl.includes('/cdn-cgi/challenge-platform') ||
+                currentUrl.includes('recaptcha') ||
+                currentUrl.includes('hcaptcha') ||
+                currentUrl.includes('challenges.cloudflare.com');
+
+            const domChallenge = await page.evaluate(() => {
+                const hasCaptchaIframe = !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"]');
+                const hasCaptchaWidget = !!document.querySelector(
+                    '.g-recaptcha, .h-captcha, [data-sitekey], [id*="captcha" i], [class*="captcha" i], [name*="captcha" i], iframe[title*="challenge" i]'
+                );
+                const text = (document.body?.innerText || '').toLowerCase();
+                const textSignals = [
+                    'verify you are human',
+                    'i am human',
+                    'captcha',
+                    'security check',
+                    'press and hold',
+                    'cloudflare'
+                ];
+                const hasChallengeText = textSignals.some((s) => text.includes(s));
+                return hasCaptchaIframe || hasCaptchaWidget || hasChallengeText;
+            });
+
+            return urlChallenge || domChallenge;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    async waitForHumanIntervention(page, reason) {
+        if (this.humanGate.active) return;
+        this.humanGate.active = true;
+        this.humanGate.reason = reason || 'Human verification required';
+        this.humanGate.url = page.url();
+        this.humanGate.since = Date.now();
+
+        this.frictionEngine.logEvent('ai_thought', {
+            thought: `Paused for human intervention: ${this.humanGate.reason}. Solve challenge and resume mission.`,
+            aiFrustrationLevel: 2,
+            diagnosis: 'AUTH_REQUIRED',
+            severity: 'Low',
+            action: 'pause_human',
+            url: this.humanGate.url,
+            currentMilestone: 'Human verification',
+            expectedEffect: 'Human solves challenge and resumes.',
+            observedEffect: 'challenge_detected',
+            verificationOutcome: 'inconclusive'
+        });
+
+        await new Promise((resolve) => {
+            this.humanGate.resolver = resolve;
+        });
     }
 
     // Guides autonomous objective discovery when no goal is provided.
@@ -623,6 +709,14 @@ class MysteryShopper {
                 const { count, elementMap } = await domUtils.markElements(page);
                 console.log(`   Vision: Marked ${count} universal elements.`);
 
+                const humanChallengeDetected = await this.detectHumanChallenge(page);
+                if (humanChallengeDetected) {
+                    console.log('[Shopper] Human verification challenge detected. Waiting for manual resume...');
+                    await this.waitForHumanIntervention(page, 'CAPTCHA or security challenge detected on page');
+                    await page.waitForTimeout(500);
+                    continue;
+                }
+
                 if (stepCount > 1) {
                     const isAdVisible = await page.evaluate(() => document.body.classList.contains('google-anno-full-screen'));
                     if (isAdVisible) {
@@ -930,6 +1024,11 @@ class MysteryShopper {
                 url
             });
         } finally {
+            this.humanGate.active = false;
+            this.humanGate.reason = '';
+            this.humanGate.url = '';
+            this.humanGate.since = null;
+            this.humanGate.resolver = null;
             if (context) {
                 try { await context.close(); } catch (e) {}
             }
