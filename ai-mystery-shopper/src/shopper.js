@@ -35,6 +35,7 @@ class MysteryShopper {
             since: null,
             resolver: null
         };
+        this.humanGateLastResumedAt = 0;
     }
 
     getHumanGateStatus() {
@@ -54,6 +55,7 @@ class MysteryShopper {
         const resolver = this.humanGate.resolver;
         this.humanGate.active = false;
         this.humanGate.resolver = null;
+        this.humanGateLastResumedAt = Date.now();
         resolver();
         return { resumed: true, message: 'Mission resumed.' };
     }
@@ -68,21 +70,45 @@ class MysteryShopper {
                 currentUrl.includes('challenges.cloudflare.com');
 
             const domChallenge = await page.evaluate(() => {
-                const hasCaptchaIframe = !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"]');
-                const hasCaptchaWidget = !!document.querySelector(
-                    '.g-recaptcha, .h-captcha, [data-sitekey], [id*="captcha" i], [class*="captcha" i], [name*="captcha" i], iframe[title*="challenge" i]'
-                );
-                const text = (document.body?.innerText || '').toLowerCase();
-                const textSignals = [
-                    'verify you are human',
-                    'i am human',
-                    'captcha',
-                    'security check',
-                    'press and hold',
-                    'cloudflare'
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 8 && rect.height > 8;
+                };
+
+                const iframeSelectors = [
+                    'iframe[src*="recaptcha"]',
+                    'iframe[src*="hcaptcha"]',
+                    'iframe[src*="turnstile"]',
+                    'iframe[title*="challenge" i]'
                 ];
-                const hasChallengeText = textSignals.some((s) => text.includes(s));
-                return hasCaptchaIframe || hasCaptchaWidget || hasChallengeText;
+                const widgetSelectors = [
+                    '.g-recaptcha',
+                    '.h-captcha',
+                    '[data-sitekey]',
+                    '[id*="captcha" i]',
+                    '[class*="captcha" i]',
+                    '[name*="captcha" i]',
+                    '#cf-challenge-running',
+                    '[id*="cf-challenge" i]',
+                    '[class*="cf-challenge" i]'
+                ];
+
+                const hasVisibleCaptchaIframe = iframeSelectors.some((s) => Array.from(document.querySelectorAll(s)).some(isVisible));
+                const hasVisibleCaptchaWidget = widgetSelectors.some((s) => Array.from(document.querySelectorAll(s)).some(isVisible));
+
+                // Text-only is weak; require high-confidence challenge wording.
+                const text = (document.body?.innerText || '').toLowerCase();
+                const strongTextSignals = [
+                    'verify you are human',
+                    'press and hold',
+                    "i'm not a robot",
+                    'complete the security check'
+                ];
+                const hasStrongChallengeText = strongTextSignals.some((s) => text.includes(s));
+
+                return hasVisibleCaptchaIframe || hasVisibleCaptchaWidget || hasStrongChallengeText;
             });
 
             return urlChallenge || domChallenge;
@@ -709,7 +735,9 @@ class MysteryShopper {
                 const { count, elementMap } = await domUtils.markElements(page);
                 console.log(`   Vision: Marked ${count} universal elements.`);
 
-                const humanChallengeDetected = await this.detectHumanChallenge(page);
+                const resumeGraceMs = 15000;
+                const inPostResumeGrace = this.humanGateLastResumedAt > 0 && (Date.now() - this.humanGateLastResumedAt) < resumeGraceMs;
+                const humanChallengeDetected = !inPostResumeGrace && await this.detectHumanChallenge(page);
                 if (humanChallengeDetected) {
                     console.log('[Shopper] Human verification challenge detected. Waiting for manual resume...');
                     await this.waitForHumanIntervention(page, 'CAPTCHA or security challenge detected on page');
