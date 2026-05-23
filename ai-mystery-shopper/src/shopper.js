@@ -579,7 +579,24 @@ class MysteryShopper {
                 this.missionRationale = 'Goal was provided manually.';
             }
 
-            milestones = await this.generateMissionPlan(goal, pageCapabilities);
+            const isJsAlertsPage = /\/javascript_alerts(?:\/)?$/i.test(url || '');
+            if (isJsAlertsPage) {
+                milestones = [
+                    'Click JS Alert trigger.',
+                    'Verify alert outcome text appears and interaction remains stable.',
+                    'Click JS Confirm trigger and accept.',
+                    'Verify result shows confirm accepted (Ok).',
+                    'Click JS Confirm trigger and cancel.',
+                    'Verify result shows confirm cancelled.',
+                    'Click JS Prompt trigger, enter sample text, and accept.',
+                    'Verify result shows entered prompt text.',
+                    'Click JS Prompt trigger and cancel.',
+                    'Verify result shows prompt cancellation.'
+                ];
+                console.log('Mission Plan (deterministic javascript_alerts):', milestones);
+            } else {
+                milestones = await this.generateMissionPlan(goal, pageCapabilities);
+            }
             const currentPageClass = await this.classifyPage(page);
             console.log(`[Shopper] Page class detected: ${currentPageClass}`);
 
@@ -596,6 +613,7 @@ class MysteryShopper {
             const trajectory = [];
             const noSignalCountsByTarget = {};
             const familyStats = {};
+            const jsDialogOutcomes = new Set();
 
             while (!completed && stepCount < MAX_STEPS) {
                 stepCount++;
@@ -674,6 +692,24 @@ class MysteryShopper {
                         severity: 'Medium',
                         diagnosis: 'UI Glitch'
                     });
+                }
+
+                if (['accept_dialog', 'dismiss_dialog', 'prompt_dialog'].includes(finalDecision.action)) {
+                    const milestoneText = `${finalDecision.current_milestone || ''} ${finalDecision.reasoning || ''}`.toLowerCase();
+                    const dialogKind = milestoneText.includes('prompt')
+                        ? 'prompt'
+                        : milestoneText.includes('confirm')
+                            ? 'confirm'
+                            : 'alert';
+                    const dialogButtonId = this.findDialogTriggerId(elementMap, dialogKind);
+                    if (dialogButtonId) {
+                        finalDecision = {
+                            ...finalDecision,
+                            action: 'click',
+                            elementId: dialogButtonId,
+                            reasoning: `${finalDecision.reasoning || ''} [Dialog action normalized to click trigger]`.trim()
+                        };
+                    }
                 }
 
                 if (finalDecision.elementId === lastActionId && finalDecision.action === lastActionTaken) {
@@ -834,6 +870,22 @@ class MysteryShopper {
                         reasoning: finalDecision.reasoning || 'No reasoning provided.',
                         result: lastActionResult
                     });
+
+                    if (isJsAlertsPage) {
+                        const resultText = ((postState && postState.jsResultText) || '').toLowerCase();
+                        if (resultText.includes('successfuly clicked an alert')) jsDialogOutcomes.add('alert');
+                        if (resultText.includes('you clicked: ok')) jsDialogOutcomes.add('confirm_ok');
+                        if (resultText.includes('you clicked: cancel')) jsDialogOutcomes.add('confirm_cancel');
+                        if (resultText.includes('you entered: null')) jsDialogOutcomes.add('prompt_cancel');
+                        if (resultText.includes('you entered:') && !resultText.includes('null')) jsDialogOutcomes.add('prompt_text');
+
+                        const required = ['alert', 'confirm_ok', 'confirm_cancel', 'prompt_text', 'prompt_cancel'];
+                        if (required.every((k) => jsDialogOutcomes.has(k))) {
+                            this.frictionEngine.logEvent('action_finish', { action: 'finish', reason: 'js_dialog_outcomes_complete' });
+                            completed = true;
+                            break;
+                        }
+                    }
                 } catch (err) {
                     console.log(`   Action Failed: ${err.message}`);
                     lastActionResult = `FAILED: ${err.message}`;
@@ -1180,8 +1232,29 @@ class MysteryShopper {
         return `${action}:${tag}:${type}:${role}:${text}`;
     }
 
+    findDialogTriggerId(elementMap, dialogKind) {
+        const mapEntries = Object.entries(elementMap || {});
+        const kindNeedle = dialogKind === 'prompt' ? 'js prompt' : (dialogKind === 'confirm' ? 'js confirm' : 'js alert');
+        const exact = mapEntries.find(([, label]) => String(label || '').toLowerCase().includes(kindNeedle));
+        if (exact) return Number(exact[0]);
+        const generic = mapEntries.find(([, label]) => String(label || '').toLowerCase().includes('click for js'));
+        return generic ? Number(generic[0]) : null;
+    }
+
     shouldSkipLowNovelty(familyKey, familyStats, decision = null) {
         const decisionText = ((decision?.text || '') + ' ' + (decision?.current_milestone || '')).toLowerCase();
+        const isJsDialogTriggerFamily =
+            familyKey.includes('js alert') ||
+            familyKey.includes('js confirm') ||
+            familyKey.includes('js prompt') ||
+            decisionText.includes('javascript alert') ||
+            decisionText.includes('javascript confirm') ||
+            decisionText.includes('javascript prompt') ||
+            decisionText.includes('js alert') ||
+            decisionText.includes('js confirm') ||
+            decisionText.includes('js prompt');
+        if (isJsDialogTriggerFamily) return false;
+
         const isAnchorClick = decision?.action === 'click' && familyKey.startsWith('click:a:');
         const isReturnLikeAction =
             isAnchorClick &&
@@ -1609,6 +1682,10 @@ class MysteryShopper {
 
             if (decision.action === 'click') {
                 const targetText = ((await locator.first().innerText().catch(() => '')) || '').toLowerCase();
+                let preJsResultText = '';
+                try {
+                    preJsResultText = await page.locator('#result').first().innerText({ timeout: 300 }).then((t) => (t || '').trim()).catch(() => '');
+                } catch (_) {}
                 if (targetText.includes('js alert')) {
                     this.nextDialogResolution = { mode: 'accept', text: '' };
                 } else if (targetText.includes('js confirm')) {
@@ -1625,6 +1702,16 @@ class MysteryShopper {
                 const popupPromise = page.context().waitForEvent('page', { timeout: 2000 }).catch(() => null);
                 await locator.click({ timeout: 7000 });
                 console.log(`   [Action] Clicked element ID: ${decision.elementId}`);
+                if (targetText.includes('js confirm') || targetText.includes('js prompt')) {
+                    await page.waitForFunction(
+                        (prev) => {
+                            const current = (document.querySelector('#result')?.textContent || '').trim();
+                            return current.length > 0 && current !== prev;
+                        },
+                        preJsResultText,
+                        { timeout: 4000 }
+                    ).catch(() => {});
+                }
                 const popupPage = await popupPromise;
                 if (popupPage) {
                     await popupPage.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});

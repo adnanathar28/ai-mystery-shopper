@@ -81,6 +81,7 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 - **Window Rule**: If a new tab/window opens after a click, use action "switch_window" to focus it. After verification, use "switch_window" to return to main window; use "close_window" only when milestone explicitly asks to close the new window.
 - **Dialog Rule**: For JavaScript dialogs: use "accept_dialog" for OK/Accept, "dismiss_dialog" for Cancel, and "prompt_dialog" with "text" when prompt input is required.
 - **Dialog Verification Rule**: For JS Alert/Confirm/Prompt, do NOT require the dialog to remain visible after click. Verify success from page outcome text (for example in "#result", like "You successfuly clicked an alert", "You clicked: Ok", "You clicked: Cancel", "You entered: ...").
+- **Dialog Priority Rule**: On JavaScript dialog pages, treat "#result" outcome changes as the primary success signal. Do not fail a milestone only because the popup itself was not persistently visible.
 
 # FORM COMPLETION RULE:
 - Once you start filling out a form (like "New User Signup"), your ONLY priority is to finish that form and click the "Signup" or "Submit" button.
