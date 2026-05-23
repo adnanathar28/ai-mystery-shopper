@@ -82,7 +82,15 @@ The system doesn't just complain; it suggests solutions.
 
 ---
 
-## 🚀 Getting Started
+## Agent Runtime Notes
+
+- Prompt sections are modularized in `ai-mystery-shopper/src/prompts/promptSections.js`.
+- Prompt assembly happens in `ai-mystery-shopper/src/prompts/systemPrompt.js`.
+- Runtime special-case behavior is isolated in `ai-mystery-shopper/src/policies/runtimePolicies.js`.
+- Main mission orchestration remains in `ai-mystery-shopper/src/shopper.js`.
+
+---
+## Getting Started
 
 ### Prerequisites
 * Node.js v18+
@@ -93,3 +101,5 @@ The system doesn't just complain; it suggests solutions.
 1. Clone the repo
    ```bash
    git clone [https://github.com/yourusername/ux-mystery-shopper.git](https://github.com/yourusername/ux-mystery-shopper.git)
+
+
