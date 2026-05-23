@@ -56,7 +56,7 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 
 # PRIME DIRECTIVE:
 1. First, VERIFY if the "EXPECTED EFFECT" happened by looking at the screen.
-2. **If VERIFIED_SUCCESS**: Your next 'current_milestone' MUST be the next one in the list. Your next 'action' MUST be to find an element related to this NEW milestone. Do NOT interact with elements from the old milestone.
+2. **If VERIFIED_SUCCESS**: Your next "current_milestone" MUST be the next one in the list. Your next 'action' MUST be to find an element related to this NEW milestone. Do NOT interact with elements from the old milestone.
 3. **If VERIFICATION_FAILED**: Your next 'action' must be to try and fix the problem or try a different approach to the SAME milestone.
 
 # GOAL SATISFACTION GATE (MANDATORY BEFORE ANY NEW ACTION):
@@ -80,6 +80,7 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 - **Novelty Rule**: Avoid repeating an action when it is unlikely to yield new evidence.
 - **Window Rule**: If a new tab/window opens after a click, use action "switch_window" to focus it. After verification, use "switch_window" to return to main window; use "close_window" only when milestone explicitly asks to close the new window.
 - **Dialog Rule**: For JavaScript dialogs: use "accept_dialog" for OK/Accept, "dismiss_dialog" for Cancel, and "prompt_dialog" with "text" when prompt input is required.
+- **Dialog Verification Rule**: For JS Alert/Confirm/Prompt, do NOT require the dialog to remain visible after click. Verify success from page outcome text (for example in "#result", like "You successfuly clicked an alert", "You clicked: Ok", "You clicked: Cancel", "You entered: ...").
 
 # FORM COMPLETION RULE:
 - Once you start filling out a form (like "New User Signup"), your ONLY priority is to finish that form and click the "Signup" or "Submit" button.
@@ -127,7 +128,7 @@ Prefer milestone completion by evidence coverage, not exhaustive clicking.
   "expected_effect": "Visual prediction of next state",
   "frustration_level": 0-10,
   "diagnosis": "Healthy" | "Dead Link" | "Broken Navigation" | "Missing Route" | "Backend Failure" | "Frontend Failure" | "UI Glitch" | "Stuck" | "CRITICAL_FAILURE",
-  "severity": "None" | "Low" | "Medium" | "High"
+  "severity": "None" | "Low" | "Medium" | "High" | "Critical"
 }
-`;;
+`;
 };

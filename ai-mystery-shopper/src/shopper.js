@@ -962,7 +962,8 @@ class MysteryShopper {
 
             const modalAppeared = !!document.querySelector('[role="dialog"], .modal, [aria-modal="true"]');
             const textSample = (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
-            return { visibleInputs, modalAppeared, textSample };
+            const jsResultText = (document.querySelector('#result')?.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            return { visibleInputs, modalAppeared, textSample, jsResultText };
         });
 
         const contentHash = this.simpleHash(data.textSample);
@@ -970,7 +971,8 @@ class MysteryShopper {
             url,
             visibleInputs: data.visibleInputs,
             modalAppeared: data.modalAppeared,
-            contentHash
+            contentHash,
+            jsResultText: data.jsResultText || ''
         };
     }
 
@@ -1000,17 +1002,20 @@ class MysteryShopper {
         const modalChanged = preState.modalAppeared !== postState.modalAppeared;
         const inputCountChanged = preState.visibleInputs !== postState.visibleInputs;
         const contentHashChanged = preState.contentHash !== postState.contentHash;
+        const jsResultChanged = (preState.jsResultText || '') !== (postState.jsResultText || '');
         const toggleChanged = !!extra.toggleChanged;
-        const anyChange = urlChanged || modalChanged || inputCountChanged || contentHashChanged || toggleChanged;
+        const anyChange = urlChanged || modalChanged || inputCountChanged || contentHashChanged || jsResultChanged || toggleChanged;
 
         return {
             urlChanged,
             modalChanged,
             inputCountChanged,
             contentHashChanged,
+            jsResultChanged,
+            jsResultText: postState.jsResultText || '',
             toggleChanged,
             anyChange,
-            summary: `urlChanged=${urlChanged}, modalChanged=${modalChanged}, inputCountChanged=${inputCountChanged}, contentChanged=${contentHashChanged}, toggleChanged=${toggleChanged}`
+            summary: `urlChanged=${urlChanged}, modalChanged=${modalChanged}, inputCountChanged=${inputCountChanged}, contentChanged=${contentHashChanged}, jsResultChanged=${jsResultChanged}, toggleChanged=${toggleChanged}`
         };
     }
 
@@ -1123,6 +1128,8 @@ class MysteryShopper {
         const localAttrMutation = !!(preLocalFingerprint && postLocalFingerprint &&
             JSON.stringify(preLocalFingerprint.attrs || {}) !== JSON.stringify(postLocalFingerprint.attrs || {}));
         const localMutationEvidence = localTargetMutation || localContainerMutation || localAttrMutation;
+        const dialogResultChanged = !!observedEffect?.jsResultChanged;
+        const dialogResultText = observedEffect?.jsResultText || '';
 
         return {
             action: decision.action,
@@ -1139,14 +1146,16 @@ class MysteryShopper {
             localTargetMutation,
             localContainerMutation,
             localAttrMutation,
-            localMutationEvidence
+            localMutationEvidence,
+            dialogResultChanged,
+            dialogResultText
         };
     }
 
     classifyOutcomeFromEvidence(evidence) {
         if (evidence.hasSevereConsoleError || evidence.has5xx) return 'failed';
         if (evidence.action === 'submit') return evidence.submitTransitioned ? 'matched' : 'failed';
-        if (evidence.toggleStateChanged || evidence.elementValueChanged || evidence.localMutationEvidence) return 'matched';
+        if (evidence.toggleStateChanged || evidence.elementValueChanged || evidence.localMutationEvidence || evidence.dialogResultChanged) return 'matched';
         if (evidence.anyMutation || evidence.structuralMutation || evidence.visualMutation) return 'weak_match';
         return 'inconclusive';
     }
