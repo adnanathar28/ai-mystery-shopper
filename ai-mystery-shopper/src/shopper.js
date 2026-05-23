@@ -19,6 +19,7 @@ class MysteryShopper {
         this.frictionEngine = new FrictionEngine();
         this.notifier = new Notifier(process.env.SLACK_WEBHOOK_URL);
         this.missionRationale = null;
+        this.nextDialogResolution = null;
     }
 
     //this function guides the ai in an autonomous manner
@@ -437,17 +438,38 @@ class MysteryShopper {
             page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
             mainPage = page;
 
-            page.on('response', (response) => {
-                if (response.status() >= 400) {
-                    sessionLogs.errors.push(`[${response.status()}] ${response.url()}`);
-                }
-            });
+            const attachPageObservers = (p) => {
+                p.on('response', (response) => {
+                    if (response.status() >= 400) {
+                        sessionLogs.errors.push(`[${response.status()}] ${response.url()}`);
+                    }
+                });
 
-            page.on('console', (msg) => {
-                if (msg.type() === 'error') {
-                    sessionLogs.console.push(msg.text());
-                }
-            });
+                p.on('console', (msg) => {
+                    if (msg.type() === 'error') {
+                        sessionLogs.console.push(msg.text());
+                    }
+                });
+
+                p.on('dialog', async (dialog) => {
+                    const resolution = this.nextDialogResolution || { mode: 'accept', text: '' };
+                    this.nextDialogResolution = null;
+                    try {
+                        if (resolution.mode === 'dismiss') {
+                            await dialog.dismiss();
+                            console.log(`   [Action] Dialog dismissed (${dialog.type()}).`);
+                        } else {
+                            await dialog.accept(resolution.text || '');
+                            console.log(`   [Action] Dialog accepted (${dialog.type()}).`);
+                        }
+                    } catch (e) {
+                        console.log(`   [Action] Dialog handler failed: ${e.message}`);
+                    }
+                });
+            };
+
+            attachPageObservers(page);
+            context.on('page', (p) => attachPageObservers(p));
 
             console.log(`[Shopper] Navigating to target: ${url}`);
 
@@ -1515,6 +1537,24 @@ class MysteryShopper {
             return toState(page);
         }
 
+        if (decision.action === 'accept_dialog') {
+            this.nextDialogResolution = { mode: 'accept', text: '' };
+            console.log('   [Action] Next JS dialog will be accepted.');
+            return toState(page);
+        }
+
+        if (decision.action === 'dismiss_dialog') {
+            this.nextDialogResolution = { mode: 'dismiss', text: '' };
+            console.log('   [Action] Next JS dialog will be dismissed.');
+            return toState(page);
+        }
+
+        if (decision.action === 'prompt_dialog') {
+            this.nextDialogResolution = { mode: 'accept', text: decision.text || '' };
+            console.log('   [Action] Next prompt dialog will be accepted with text.');
+            return toState(page);
+        }
+
         if (decision.action === 'submit') {
             const selector = decision.elementId ? `[data-ai-id="${decision.elementId}"]` : 'button[type="submit"]';
             const submitLocator = page.locator(
@@ -1559,6 +1599,20 @@ class MysteryShopper {
             }, selector);
 
             if (decision.action === 'click') {
+                const targetText = ((await locator.first().innerText().catch(() => '')) || '').toLowerCase();
+                if (targetText.includes('js alert')) {
+                    this.nextDialogResolution = { mode: 'accept', text: '' };
+                } else if (targetText.includes('js confirm')) {
+                    const wantsCancel = `${decision.current_milestone || ''} ${decision.reasoning || ''}`.toLowerCase().includes('cancel');
+                    this.nextDialogResolution = { mode: wantsCancel ? 'dismiss' : 'accept', text: '' };
+                } else if (targetText.includes('js prompt')) {
+                    const context = `${decision.current_milestone || ''} ${decision.reasoning || ''}`.toLowerCase();
+                    const wantsCancel = context.includes('cancel');
+                    this.nextDialogResolution = wantsCancel
+                        ? { mode: 'dismiss', text: '' }
+                        : { mode: 'accept', text: decision.text || 'Shopper Bot' };
+                }
+
                 const popupPromise = page.context().waitForEvent('page', { timeout: 2000 }).catch(() => null);
                 await locator.click({ timeout: 7000 });
                 console.log(`   [Action] Clicked element ID: ${decision.elementId}`);

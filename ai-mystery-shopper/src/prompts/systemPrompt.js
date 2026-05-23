@@ -79,6 +79,7 @@ ${history.trajectory.map(t => `- Step ${t.step}: I did "${t.action}" because "${
 - **Generalization Rule**: If 2-3 samples from the same control family produce the same evidence pattern, infer behavior for the family and move to the next milestone.
 - **Novelty Rule**: Avoid repeating an action when it is unlikely to yield new evidence.
 - **Window Rule**: If a new tab/window opens after a click, use action "switch_window" to focus it. After verification, use "switch_window" to return to main window; use "close_window" only when milestone explicitly asks to close the new window.
+- **Dialog Rule**: For JavaScript dialogs: use "accept_dialog" for OK/Accept, "dismiss_dialog" for Cancel, and "prompt_dialog" with "text" when prompt input is required.
 
 # FORM COMPLETION RULE:
 - Once you start filling out a form (like "New User Signup"), your ONLY priority is to finish that form and click the "Signup" or "Submit" button.
@@ -119,7 +120,7 @@ Prefer milestone completion by evidence coverage, not exhaustive clicking.
   "verification_reasoning": "Why?",
   "current_page_description": "1 sentence describing the screen",
   "current_milestone": "Active milestone",
-  "action": "click" | "type" | "scroll" | "submit" | "finish" | "select" | "switch_window" | "close_window",
+  "action": "click" | "type" | "scroll" | "submit" | "finish" | "select" | "switch_window" | "close_window" | "accept_dialog" | "dismiss_dialog" | "prompt_dialog",
   "elementId": number,
   "text": "text (if type)",
   "reasoning": "Why this action? (In character as ${persona.label})",
