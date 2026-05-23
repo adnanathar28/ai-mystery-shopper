@@ -524,6 +524,7 @@ class MysteryShopper {
         let milestones = [];
         let infraFailure = null;
         const sessionLogs = { errors: [], console: [] };
+        const stepArtifacts = [];
 
         if (url && !url.startsWith('http')) {
             url = `https://${url}`;
@@ -757,6 +758,7 @@ class MysteryShopper {
                 const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60 });
                 const base64Image = screenshotBuffer.toString('base64');
                 fs.writeFileSync(path.join(sessionPath, `step-${stepCount}.jpg`), screenshotBuffer);
+                const screenshotUrl = `/sessions/${sessionDirName}/step-${stepCount}.jpg`;
 
                 const contextData = {
                     currentUrl: page.url(),
@@ -846,6 +848,18 @@ class MysteryShopper {
                 lastActionTaken = `${finalDecision.action} on ${finalDecision.reasoning}`;
                 lastExpectedEffect = finalDecision.expected_effect;
                 steps.push({ step: stepCount, ...finalDecision });
+                stepArtifacts.push({
+                    step: stepCount,
+                    imageUrl: screenshotUrl,
+                    message: finalDecision.reasoning || '',
+                    milestone: finalDecision.current_milestone || '',
+                    action: finalDecision.action || '',
+                    diagnosis: finalDecision.diagnosis || '',
+                    severity: finalDecision.severity || '',
+                    verification: finalDecision.verification_verdict || '',
+                    verificationReasoning: finalDecision.verification_reasoning || '',
+                    url: contextData.currentUrl || ''
+                });
 
                 if (finalDecision.action === 'finish') {
                     this.frictionEngine.logEvent('ai_thought', {
@@ -1073,6 +1087,16 @@ class MysteryShopper {
                     console.error('Failed to rename video:', e.message);
                 }
             }
+
+            try {
+                fs.writeFileSync(
+                    path.join(sessionPath, 'screenshot-timeline.json'),
+                    JSON.stringify(stepArtifacts, null, 2),
+                    'utf8'
+                );
+            } catch (e) {
+                console.error('Failed to write screenshot timeline:', e.message);
+            }
         }
 
         const report = this.frictionEngine.getReport();
@@ -1083,6 +1107,7 @@ class MysteryShopper {
         report.milestones = milestones.length ? milestones : ['N/A'];
         report.persona = config.persona;
         report.device = deviceConfig.label;
+        report.screenshotTimeline = stepArtifacts;
 
         if (infraFailure) {
             report.rca = {

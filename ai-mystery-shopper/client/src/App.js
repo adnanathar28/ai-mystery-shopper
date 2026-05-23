@@ -231,6 +231,32 @@ function App() {
             </div>
           )}
 
+          {Array.isArray(report.screenshotTimeline) && report.screenshotTimeline.length > 0 && (
+            <div className="screenshot-timeline-card">
+              <h3>Screenshot Timeline</h3>
+              <div className="screenshot-timeline-list">
+                {report.screenshotTimeline.map((item) => (
+                  <div key={`shot-${item.step}`} className="screenshot-item">
+                    <div className="screenshot-meta-row">
+                      <span className="screenshot-step">Step {item.step}</span>
+                      <span className="screenshot-action">{item.action}</span>
+                      <span className="screenshot-diagnosis">{item.diagnosis}</span>
+                    </div>
+                    <img
+                      src={`http://localhost:3001${item.imageUrl}`}
+                      alt={`Mission step ${item.step}`}
+                      className="screenshot-image"
+                    />
+                    <p className="screenshot-message">"{item.message}"</p>
+                    <p className="screenshot-submeta">
+                      Milestone: {item.milestone} | Verification: {item.verification}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="timeline">
             <h3>Shopper Journey Log</h3>
             {report.log.filter(l => l.type === 'ai_thought').map((step, i) => (
