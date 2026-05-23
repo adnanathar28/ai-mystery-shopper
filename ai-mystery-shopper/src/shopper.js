@@ -1,13 +1,13 @@
 // src/shopper.js
-const { chromium, devices } = require('playwright');
+const { chromium } = require('playwright');
 const FrictionEngine = require('./frictionEngine');
 const fs = require('fs');
 const path = require('path');
 const Notifier = require('./notifier');
 const aiClient = require('./aiClient');
 const domUtils = require('./domUtils'); 
-const systemPrompt = require('./prompts/systemPrompt'); // IMPORTED
-const DEVICES = require('./config/devices'); // IMPORTED
+const systemPrompt = require('./prompts/systemPrompt');
+const DEVICES = require('./config/devices');
 const { AIDecisionSchema, normalizeDecisionShape } = require('./schemas/aiDecisionSchema');
 const { sanitizeDecision } = require('./decisionSanitizer');
 const { evaluateContract } = require('./evidenceContracts');
@@ -30,7 +30,7 @@ class MysteryShopper {
         this.nextDialogResolution = null;
     }
 
-    //this function guides the ai in an autonomous manner
+    // Guides autonomous objective discovery when no goal is provided.
     async discoverGoal(page, capabilities = null) {
     console.log("🕵️  Autonomous Mode: Discovering primary test objective...");
     
