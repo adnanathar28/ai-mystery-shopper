@@ -11,6 +11,7 @@ const DEVICES = require('./config/devices');
 const { AIDecisionSchema, normalizeDecisionShape } = require('./schemas/aiDecisionSchema');
 const { sanitizeDecision } = require('./decisionSanitizer');
 const { evaluateContract } = require('./evidenceContracts');
+const prisma = require('./db');
 const {
     isJsAlertsPage,
     getDeterministicMilestonesForUrl,
@@ -525,9 +526,25 @@ class MysteryShopper {
         let infraFailure = null;
         const sessionLogs = { errors: [], console: [] };
         const stepArtifacts = [];
+        let missionRecordId = null;
 
         if (url && !url.startsWith('http')) {
             url = `https://${url}`;
+        }
+
+        try {
+            const mission = await prisma.mission.create({
+                data: {
+                    targetUrl: url,
+                    goal: goal || '',
+                    persona: config.persona,
+                    device: deviceConfig.label,
+                    status: 'running'
+                }
+            });
+            missionRecordId = mission.id;
+        } catch (e) {
+            console.error('[DB] Failed to create mission record:', e.message);
         }
 
         try {
@@ -1127,6 +1144,75 @@ class MysteryShopper {
         } catch (e) {
             console.error('[Notifier] Alert send failed:', e.message);
         }
+                                                                    
+        if (missionRecordId) {
+            const thoughtSteps = (report.log || [])
+                .filter((entry) => entry.type === 'ai_thought')
+                .map((entry, idx) => {
+                    const d = entry.details || {};
+                    return {
+                        missionId: missionRecordId,
+                        stepIndex: idx + 1,
+                        action: d.action || 'unknown',
+                        diagnosis: d.diagnosis || null,
+                        severity: d.severity || null,
+                        frustrationLevel: Number.isFinite(Number(d.aiFrustrationLevel)) ? Number(d.aiFrustrationLevel) : null,
+                        verificationOutcome: d.verificationOutcome || null,
+                        verificationVerdict: d.verificationOutcome || null,
+                        currentMilestone: d.currentMilestone || null,
+                        expectedEffect: d.expectedEffect || null,
+                        observedEffect: d.observedEffect || null,
+                        thought: d.thought || null,
+                        evidenceJson: d.evidence || null,
+                        contractId: d.contractId || null,
+                        contractVerdict: d.contractVerdict || null,
+                        contractConfidence: Number.isFinite(Number(d.contractConfidence)) ? Number(d.contractConfidence) : null,
+                        contractReasonsJson: Array.isArray(d.contractReasons) ? d.contractReasons : null
+                    };
+                });
+
+            const screenshotRows = stepArtifacts.map((item) => ({
+                missionId: missionRecordId,
+                stepIndex: item.step,
+                imageUrl: item.imageUrl,
+                message: item.message || null,
+                milestone: item.milestone || null,
+                action: item.action || null,
+                diagnosis: item.diagnosis || null,
+                severity: item.severity || null,
+                verification: item.verification || null,
+                verificationReasoning: item.verificationReasoning || null,
+                pageUrl: item.url || null
+            }));
+
+            try {
+                if (thoughtSteps.length > 0) {
+                    await prisma.missionStep.createMany({ data: thoughtSteps });
+                }
+                if (screenshotRows.length > 0) {
+                    await prisma.missionScreenshot.createMany({ data: screenshotRows });
+                }
+
+                await prisma.mission.update({
+                    where: { id: missionRecordId },
+                    data: {
+                        finishedAt: new Date(),
+                        status: infraFailure ? 'failed_preflight' : 'completed',
+                        goal: report.goal || goal || '',
+                        rationale: report.rationale || null,
+                        confusionScore: Number.isFinite(Number(report.confusionScore)) ? Number(report.confusionScore) : null,
+                        priority: report.priority || null,
+                        topDiagnosis: report.topDiagnosis || null,
+                        videoUrl: report.videoUrl || null,
+                        reportJson: report,
+                        rcaJson: report.rca || null
+                    }
+                });
+            } catch (e) {
+                console.error('[DB] Failed to persist mission details:', e.message);
+            }
+        }
+
         return report;
     }
 
