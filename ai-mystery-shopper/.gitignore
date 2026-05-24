@@ -27,3 +27,5 @@ public/user_data/
 # OS System Files
 .DS_Store
 Thumbs.db
+
+/src/generated/prisma
