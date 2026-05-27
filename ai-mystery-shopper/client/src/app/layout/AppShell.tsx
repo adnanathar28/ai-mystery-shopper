@@ -5,6 +5,8 @@ import { cn } from "../../lib/cn";
 
 type ShellProps = {
   children: ReactNode;
+  onRunMission: () => void;
+  runningMission?: boolean;
 };
 
 const navItems = [
@@ -15,7 +17,7 @@ const navItems = [
   { label: "Settings", icon: Settings },
 ];
 
-export function AppShell({ children }: ShellProps) {
+export function AppShell({ children, onRunMission, runningMission = false }: ShellProps) {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <div className="pointer-events-none fixed inset-0 bg-sentinel-grid bg-[size:34px_34px] opacity-[0.14]" />
@@ -75,13 +77,16 @@ export function AppShell({ children }: ShellProps) {
                   <option>Local</option>
                 </select>
                 <span className="hidden items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 md:flex">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                  Agents Online
+                  <span className={`h-1.5 w-1.5 rounded-full ${runningMission ? "bg-emerald-300" : "bg-zinc-500"}`} />
+                  {runningMission ? "Agent Running" : "Agent Online"}
                 </span>
               </div>
 
               <div className="flex items-center gap-2 md:gap-3">
-                <button className="rounded-lg border border-indigo-400/40 bg-gradient-to-r from-indigo-500/40 to-violet-500/35 px-4 py-2 text-sm font-medium text-indigo-100 transition hover:from-indigo-500/50 hover:to-violet-500/50">
+                <button
+                  onClick={onRunMission}
+                  className="rounded-lg border border-indigo-400/40 bg-gradient-to-r from-indigo-500/40 to-violet-500/35 px-4 py-2 text-sm font-medium text-indigo-100 transition hover:from-indigo-500/50 hover:to-violet-500/50"
+                >
                   Run Mission
                 </button>
                 <button className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition hover:text-zinc-200">
