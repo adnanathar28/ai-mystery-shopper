@@ -17,12 +17,12 @@ const statusStyles: Record<MissionHistoryItem["status"], string> = {
 export function MissionHistoryTable({ rows, onOpenReport, onViewEvidence }: Props) {
   return (
     <SurfaceCard className="overflow-hidden p-0">
-      <div className="border-b border-zinc-800/80 px-5 py-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-400">Mission History</h3>
+      <div className="border-b border-slate-200 px-5 py-4">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Mission History</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left">
-          <thead className="bg-zinc-950/80 text-xs uppercase tracking-[0.16em] text-zinc-500">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.2em] text-slate-500">
             <tr>
               <th className="px-5 py-3 font-medium">Target URL</th>
               <th className="px-5 py-3 font-medium">Goal</th>
@@ -36,22 +36,22 @@ export function MissionHistoryTable({ rows, onOpenReport, onViewEvidence }: Prop
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-t border-zinc-900 text-sm text-zinc-300 transition hover:bg-zinc-900/60">
-                <td className="px-5 py-3 text-zinc-400">{row.targetUrl}</td>
-                <td className="px-5 py-3 font-medium text-zinc-200">{row.goal}</td>
+              <tr key={row.id} className="border-t border-slate-100 text-sm text-slate-700 transition hover:bg-slate-50">
+                <td className="px-5 py-3 text-slate-500">{row.targetUrl}</td>
+                <td className="px-5 py-3 font-medium text-slate-900">{row.goal}</td>
                 <td className="px-5 py-3">{row.persona}</td>
                 <td className="px-5 py-3">{row.device}</td>
                 <td className="px-5 py-3">{row.frictionScore}</td>
                 <td className="px-5 py-3">
                   <span className={cn("rounded-full border px-2.5 py-1 text-xs font-medium", statusStyles[row.status])}>{row.status}</span>
                 </td>
-                <td className="px-5 py-3 text-zinc-500">{row.timestamp}</td>
+                <td className="px-5 py-3 text-slate-400">{row.timestamp}</td>
                 <td className="px-5 py-3">
                   <div className="flex gap-2">
-                    <button onClick={() => onViewEvidence(row.id)} className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300">
+                    <button onClick={() => onViewEvidence(row.id)} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700">
                       Evidence
                     </button>
-                    <button onClick={() => onOpenReport(row.id)} className="rounded-md border border-indigo-400/30 bg-indigo-500/10 px-2 py-1 text-xs text-indigo-200">
+                    <button onClick={() => onOpenReport(row.id)} className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
                       Report
                     </button>
                   </div>

@@ -50,7 +50,7 @@ export function DashboardPage({ refreshToken, runningMission }: Props) {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4 lg:space-y-5">
-      {error ? <p className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-2 text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</p> : null}
       <AnalyticsCards cards={bundle.metricCards} />
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_1fr]">

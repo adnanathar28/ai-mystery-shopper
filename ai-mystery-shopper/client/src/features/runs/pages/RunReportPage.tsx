@@ -31,28 +31,29 @@ export function RunReportPage() {
       <SurfaceCard>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">{mission.goal}</h2>
-            <p className="mt-1 text-sm text-zinc-400">{mission.targetUrl}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Run Report</p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-900">{mission.goal}</h2>
+            <p className="mt-1 text-sm text-slate-500">{mission.targetUrl}</p>
           </div>
-          <button onClick={() => navigate(`/evidence?missionId=${mission.id}`)} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300">
+          <button onClick={() => navigate(`/evidence?missionId=${mission.id}`)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700">
             Open Evidence
           </button>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-          <p className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 text-zinc-300">Persona: {mission.persona}</p>
-          <p className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 text-zinc-300">Device: {mission.device}</p>
-          <p className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 text-zinc-300">Friction: {mission.confusionScore ?? 0}</p>
-          <p className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 text-zinc-300">Diagnosis: {mission.topDiagnosis || "Healthy"}</p>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-slate-700">Persona: {mission.persona}</p>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-slate-700">Device: {mission.device}</p>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-slate-700">Friction: {mission.confusionScore ?? 0}</p>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-slate-700">Diagnosis: {mission.topDiagnosis || "Healthy"}</p>
         </div>
       </SurfaceCard>
 
       <SurfaceCard>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-zinc-400">Reasoning Timeline</h3>
+        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Reasoning Timeline</h3>
         <div className="space-y-2">
           {mission.steps.map((s) => (
-            <div key={`${s.stepIndex}-${s.createdAt}`} className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3">
-              <p className="text-xs text-zinc-500">Step {s.stepIndex} • {s.action} • {s.diagnosis || "Healthy"}</p>
-              <p className="mt-1 text-sm text-zinc-300">{s.thought || "No thought captured."}</p>
+            <div key={`${s.stepIndex}-${s.createdAt}`} className="rounded-lg border border-slate-200 bg-white p-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Step {s.stepIndex} • {s.action} • {s.diagnosis || "Healthy"}</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-800">{s.thought || "No thought captured."}</p>
             </div>
           ))}
         </div>

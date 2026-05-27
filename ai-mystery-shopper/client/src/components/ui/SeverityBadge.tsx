@@ -5,9 +5,9 @@ type SeverityBadgeProps = {
 };
 
 const styles = {
-  P0: "border-rose-400/30 bg-rose-500/15 text-rose-300",
-  P1: "border-amber-400/30 bg-amber-500/15 text-amber-300",
-  P2: "border-sky-400/30 bg-sky-500/15 text-sky-300",
+  P0: "border-rose-200 bg-rose-50 text-rose-700",
+  P1: "border-amber-200 bg-amber-50 text-amber-700",
+  P2: "border-sky-200 bg-sky-50 text-sky-700",
 };
 
 export function SeverityBadge({ level }: SeverityBadgeProps) {
