@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 import { AnalyticsCards } from "../components/AnalyticsCards";
 import { DashboardLoading } from "../components/DashboardLoading";
-import { EmptyState } from "../components/EmptyState";
-import { LatestIssuesPanel } from "../components/LatestIssuesPanel";
 import { LiveMissionPanel } from "../components/LiveMissionPanel";
-import { MissionHistoryTable } from "../components/MissionHistoryTable";
+import { SlackPreviewPanel } from "../components/SlackPreviewPanel";
 import { loadDashboardBundle, type DashboardBundle } from "../lib/dashboardMapper";
 
 type Props = {
@@ -18,7 +15,6 @@ export function DashboardPage({ refreshToken, runningMission }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [bundle, setBundle] = useState<DashboardBundle | null>(null);
-  const navigate = useNavigate();
 
   const hydrate = useCallback(async () => {
     setLoading(true);
@@ -55,30 +51,12 @@ export function DashboardPage({ refreshToken, runningMission }: Props) {
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_1fr]">
         <LiveMissionPanel mission={bundle.liveMission} />
-        {bundle.issues.length ? (
-          <LatestIssuesPanel
-            issues={bundle.issues}
-            onViewAll={() => navigate("/issues")}
-            onViewEvidence={(id) => navigate(`/evidence?missionId=${id}`)}
-            onOpenReport={(id) => navigate(`/runs/${id}`)}
-          />
-        ) : (
-          <EmptyState
-            title="No issues detected"
-            message="Your latest runs are clean. New mission insights will appear here once friction is detected."
-          />
-        )}
-      </section>
-
-      {bundle.historyRows.length ? (
-        <MissionHistoryTable
-          rows={bundle.historyRows}
-          onOpenReport={(id) => navigate(`/runs/${id}`)}
-          onViewEvidence={(id) => navigate(`/evidence?missionId=${id}`)}
+        <SlackPreviewPanel
+          missionTitle={bundle.liveMission.goal}
+          diagnosis={bundle.issues[0]?.diagnosis || "Healthy"}
+          frictionScore={bundle.historyRows[0]?.frictionScore || 0}
         />
-      ) : (
-        <EmptyState title="No mission history yet" message="Run your first mission to populate the execution history table." />
-      )}
+      </section>
     </motion.div>
   );
 }

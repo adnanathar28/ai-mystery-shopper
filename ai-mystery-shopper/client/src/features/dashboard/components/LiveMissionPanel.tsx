@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { BadgeCheck, Cpu, Globe, UserCircle2 } from "lucide-react";
+import { Cpu, Globe, UserCircle2 } from "lucide-react";
 import { SurfaceCard } from "../../../components/ui/SurfaceCard";
 import { LiveMission } from "../../../types/dashboard";
 
@@ -16,8 +16,7 @@ const statusStyles = {
 export function LiveMissionPanel({ mission }: Props) {
   return (
     <SurfaceCard className="overflow-hidden p-0">
-      <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_0.8fr]">
-        <div className="border-b border-slate-200 p-5 xl:border-b-0 xl:border-r">
+      <div className="p-5">
           <div className="mb-4 flex items-center justify-between">
             <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">Live Mission</p>
             <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusStyles[mission.status]}`}>{mission.status}</span>
@@ -64,17 +63,6 @@ export function LiveMissionPanel({ mission }: Props) {
               </motion.div>
             ))}
           </div>
-        </div>
-
-        <div className="p-5">
-          <p className="mb-3 text-[11px] uppercase tracking-[0.2em] text-slate-500">Evidence Snapshot</p>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-            <img src={mission.previewImage} alt={mission.previewLabel} className="h-36 w-full object-cover opacity-90" />
-          </div>
-          <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-500">
-            <BadgeCheck size={14} className="text-emerald-600" /> Evidence stream synced to active run
-          </p>
-        </div>
       </div>
     </SurfaceCard>
   );

@@ -1,5 +1,4 @@
-import { Bell, Bot, CircleUserRound, Rocket, Settings, ShieldAlert, TableProperties, TerminalSquare } from "lucide-react";
-import { motion } from "framer-motion";
+import { Bell, Bot, CircleUserRound, ShieldAlert, TableProperties, TerminalSquare } from "lucide-react";
 import { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -15,7 +14,6 @@ const navItems = [
   { label: "Runs", icon: TerminalSquare, to: "/runs" },
   { label: "Issues", icon: ShieldAlert, to: "/issues" },
   { label: "Evidence", icon: Bot, to: "/evidence" },
-  { label: "Settings", icon: Settings, to: "/settings" },
 ];
 
 export function AppShell({ children, onRunMission, runningMission = false }: ShellProps) {
@@ -55,21 +53,7 @@ export function AppShell({ children, onRunMission, runningMission = false }: She
             ))}
           </nav>
 
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="mt-auto rounded-2xl border border-slate-200 bg-slate-50 p-4"
-          >
-            <div className="mb-2 flex items-center gap-2 text-indigo-700">
-              <Rocket size={15} />
-              <p className="text-xs font-semibold uppercase tracking-[0.18em]">Growth Plan</p>
-            </div>
-            <p className="text-sm text-slate-600">Scale to 10x parallel agents and advanced RCA workflows.</p>
-            <button className="mt-3 w-full rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100">
-              Upgrade Workspace
-            </button>
-          </motion.div>
+          <div className="mt-auto" />
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
@@ -97,7 +81,7 @@ export function AppShell({ children, onRunMission, runningMission = false }: She
                 <button onClick={() => navigate("/issues")} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 transition hover:text-slate-800">
                   <Bell size={16} />
                 </button>
-                <button onClick={() => navigate("/settings")} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 transition hover:text-slate-800">
+                <button onClick={() => navigate("/")} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 transition hover:text-slate-800">
                   <CircleUserRound size={17} />
                 </button>
               </div>
