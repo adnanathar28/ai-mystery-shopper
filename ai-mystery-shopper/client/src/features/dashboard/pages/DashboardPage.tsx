@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { AnalyticsCards } from "../components/AnalyticsCards";
 import { DashboardLoading } from "../components/DashboardLoading";
@@ -80,9 +80,9 @@ export function DashboardPage({ refreshToken, latestRunReport, runningMission }:
     ];
   }, [missions]);
 
-  useEffect(() => {
+  const hydrate = useCallback(async () => {
     let cancelled = false;
-    async function hydrate() {
+    async function runHydration() {
       setLoading(true);
       setError("");
       try {
@@ -135,11 +135,30 @@ export function DashboardPage({ refreshToken, latestRunReport, runningMission }:
         if (!cancelled) setLoading(false);
       }
     }
-    hydrate();
+    await runHydration();
     return () => {
       cancelled = true;
     };
-  }, [refreshToken]);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const cleanup = await hydrate();
+      if (!mounted) cleanup();
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [refreshToken, hydrate]);
+
+  useEffect(() => {
+    if (!runningMission) return;
+    const interval = window.setInterval(() => {
+      hydrate();
+    }, 10000);
+    return () => window.clearInterval(interval);
+  }, [runningMission, hydrate]);
 
   useEffect(() => {
     if (!latestRunReport) return;
