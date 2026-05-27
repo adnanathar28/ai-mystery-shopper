@@ -4,6 +4,8 @@ import { MissionHistoryItem } from "../../../types/dashboard";
 
 type Props = {
   rows: MissionHistoryItem[];
+  onOpenReport: (missionId: string) => void;
+  onViewEvidence: (missionId: string) => void;
 };
 
 const statusStyles: Record<MissionHistoryItem["status"], string> = {
@@ -12,7 +14,7 @@ const statusStyles: Record<MissionHistoryItem["status"], string> = {
   Critical: "border-rose-400/30 bg-rose-500/10 text-rose-300",
 };
 
-export function MissionHistoryTable({ rows }: Props) {
+export function MissionHistoryTable({ rows, onOpenReport, onViewEvidence }: Props) {
   return (
     <SurfaceCard className="overflow-hidden p-0">
       <div className="border-b border-zinc-800/80 px-5 py-4">
@@ -29,6 +31,7 @@ export function MissionHistoryTable({ rows }: Props) {
               <th className="px-5 py-3 font-medium">Friction Score</th>
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">Timestamp</th>
+              <th className="px-5 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -43,6 +46,16 @@ export function MissionHistoryTable({ rows }: Props) {
                   <span className={cn("rounded-full border px-2.5 py-1 text-xs font-medium", statusStyles[row.status])}>{row.status}</span>
                 </td>
                 <td className="px-5 py-3 text-zinc-500">{row.timestamp}</td>
+                <td className="px-5 py-3">
+                  <div className="flex gap-2">
+                    <button onClick={() => onViewEvidence(row.id)} className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300">
+                      Evidence
+                    </button>
+                    <button onClick={() => onOpenReport(row.id)} className="rounded-md border border-indigo-400/30 bg-indigo-500/10 px-2 py-1 text-xs text-indigo-200">
+                      Report
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

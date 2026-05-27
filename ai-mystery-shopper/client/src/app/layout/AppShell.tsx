@@ -2,6 +2,7 @@ import { Bell, Bot, CircleUserRound, Rocket, Settings, ShieldAlert, TablePropert
 import { motion } from "framer-motion";
 import { ReactNode } from "react";
 import { cn } from "../../lib/cn";
+import { NavLink, useNavigate } from "react-router-dom";
 
 type ShellProps = {
   children: ReactNode;
@@ -10,14 +11,15 @@ type ShellProps = {
 };
 
 const navItems = [
-  { label: "Dashboard", icon: TableProperties, active: true },
-  { label: "Runs", icon: TerminalSquare },
-  { label: "Issues", icon: ShieldAlert },
-  { label: "Evidence", icon: Bot },
-  { label: "Settings", icon: Settings },
+  { label: "Dashboard", icon: TableProperties, to: "/" },
+  { label: "Runs", icon: TerminalSquare, to: "/runs" },
+  { label: "Issues", icon: ShieldAlert, to: "/issues" },
+  { label: "Evidence", icon: Bot, to: "/evidence" },
+  { label: "Settings", icon: Settings, to: "/settings" },
 ];
 
 export function AppShell({ children, onRunMission, runningMission = false }: ShellProps) {
+  const navigate = useNavigate();
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <div className="pointer-events-none fixed inset-0 bg-sentinel-grid bg-[size:34px_34px] opacity-[0.14]" />
@@ -35,18 +37,21 @@ export function AppShell({ children, onRunMission, runningMission = false }: She
 
           <nav className="space-y-1">
             {navItems.map((item) => (
-              <button
-                key={item.label}
-                className={cn(
-                  "group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
-                  item.active
-                    ? "border-indigo-400/30 bg-indigo-500/10 text-zinc-100"
-                    : "border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+              <NavLink key={item.label} to={item.to}>
+                {({ isActive }) => (
+                  <span
+                    className={cn(
+                      "group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
+                      isActive
+                        ? "border-indigo-400/30 bg-indigo-500/10 text-zinc-100"
+                        : "border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+                    )}
+                  >
+                    <item.icon size={17} className={isActive ? "text-indigo-300" : "text-zinc-500 group-hover:text-zinc-300"} />
+                    {item.label}
+                  </span>
                 )}
-              >
-                <item.icon size={17} className={item.active ? "text-indigo-300" : "text-zinc-500 group-hover:text-zinc-300"} />
-                {item.label}
-              </button>
+              </NavLink>
             ))}
           </nav>
 
@@ -89,10 +94,10 @@ export function AppShell({ children, onRunMission, runningMission = false }: She
                 >
                   Run Mission
                 </button>
-                <button className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition hover:text-zinc-200">
+                <button onClick={() => navigate("/issues")} className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition hover:text-zinc-200">
                   <Bell size={16} />
                 </button>
-                <button className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition hover:text-zinc-200">
+                <button onClick={() => navigate("/settings")} className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition hover:text-zinc-200">
                   <CircleUserRound size={17} />
                 </button>
               </div>

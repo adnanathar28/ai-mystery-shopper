@@ -6,14 +6,17 @@ import { Issue } from "../../../types/dashboard";
 
 type Props = {
   issues: Issue[];
+  onViewEvidence: (missionId: string) => void;
+  onOpenReport: (missionId: string) => void;
+  onViewAll: () => void;
 };
 
-export function LatestIssuesPanel({ issues }: Props) {
+export function LatestIssuesPanel({ issues, onViewEvidence, onOpenReport, onViewAll }: Props) {
   return (
     <SurfaceCard>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-400">Latest Issues</h3>
-        <button className="text-xs text-zinc-500 transition hover:text-zinc-300">View all</button>
+        <button onClick={onViewAll} className="text-xs text-zinc-500 transition hover:text-zinc-300">View all</button>
       </div>
 
       <div className="space-y-3">
@@ -37,10 +40,16 @@ export function LatestIssuesPanel({ issues }: Props) {
             </div>
             <p className="mb-3 text-sm text-zinc-400">{issue.summary}</p>
             <div className="flex gap-2">
-              <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-300 transition hover:border-zinc-600">
+              <button
+                onClick={() => onViewEvidence(issue.missionId)}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-300 transition hover:border-zinc-600"
+              >
                 <FileSearch2 size={13} /> View Evidence
               </button>
-              <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-200 transition hover:bg-indigo-500/20">
+              <button
+                onClick={() => onOpenReport(issue.missionId)}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-200 transition hover:bg-indigo-500/20"
+              >
                 <ExternalLink size={13} /> Open Report
               </button>
             </div>

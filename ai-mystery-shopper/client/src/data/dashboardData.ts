@@ -28,6 +28,7 @@ export const liveMission: LiveMission = {
 export const latestIssues: Issue[] = [
   {
     id: "ISS-1042",
+    missionId: "MIS-9001",
     severity: "P0",
     diagnosis: "Signup Submit Dead Link",
     summary: "Submit action produced no navigation and no validation state for 12 seconds on Safari mobile.",
@@ -35,6 +36,7 @@ export const latestIssues: Issue[] = [
   },
   {
     id: "ISS-1039",
+    missionId: "MIS-9000",
     severity: "P1",
     diagnosis: "Broken Navigation",
     summary: "Pricing CTA routes to 404 from onboarding modal in FR locale.",
@@ -42,6 +44,7 @@ export const latestIssues: Issue[] = [
   },
   {
     id: "ISS-1036",
+    missionId: "MIS-8998",
     severity: "P2",
     diagnosis: "UI Glitch",
     summary: "Feature tooltip clips outside viewport at 1024px and hides save action.",

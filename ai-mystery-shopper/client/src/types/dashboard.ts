@@ -31,6 +31,7 @@ export type LiveMission = {
 
 export type Issue = {
   id: string;
+  missionId: string;
   severity: "P0" | "P1" | "P2";
   diagnosis: string;
   summary: string;
