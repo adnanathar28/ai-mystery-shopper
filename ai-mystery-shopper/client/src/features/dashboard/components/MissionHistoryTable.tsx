@@ -6,6 +6,7 @@ type Props = {
   rows: MissionHistoryItem[];
   onOpenReport: (missionId: string) => void;
   onViewEvidence: (missionId: string) => void;
+  onDeleteFaulty?: (missionId: string) => void;
 };
 
 const statusStyles: Record<MissionHistoryItem["status"], string> = {
@@ -14,7 +15,7 @@ const statusStyles: Record<MissionHistoryItem["status"], string> = {
   Critical: "border-rose-400/30 bg-rose-500/10 text-rose-300",
 };
 
-export function MissionHistoryTable({ rows, onOpenReport, onViewEvidence }: Props) {
+export function MissionHistoryTable({ rows, onOpenReport, onViewEvidence, onDeleteFaulty }: Props) {
   return (
     <SurfaceCard className="overflow-hidden p-0">
       <div className="border-b border-slate-200 px-5 py-4">
@@ -54,6 +55,14 @@ export function MissionHistoryTable({ rows, onOpenReport, onViewEvidence }: Prop
                     <button onClick={() => onOpenReport(row.id)} className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
                       Report
                     </button>
+                    {onDeleteFaulty && row.status !== "Smooth" ? (
+                      <button
+                        onClick={() => onDeleteFaulty(row.id)}
+                        className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs text-rose-700"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>

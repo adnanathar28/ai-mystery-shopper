@@ -21,3 +21,10 @@ export async function runMission(payload: ShopRequest) {
   const { data } = await http.post<ShopResponseApi>("/api/shop", payload);
   return data;
 }
+
+export async function deleteMission(id: string, force = false) {
+  const { data } = await http.delete<{ deleted: boolean; id: string }>(`/api/missions/${id}`, {
+    params: force ? { force: "true" } : undefined,
+  });
+  return data;
+}

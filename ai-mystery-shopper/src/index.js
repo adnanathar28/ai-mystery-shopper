@@ -114,3 +114,27 @@ app.get('/api/missions/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch mission details' });
   }
 });
+
+app.delete('/api/missions/:id', async (req, res) => {
+  try {
+    const mission = await prisma.mission.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true
+      }
+    });
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' });
+    }
+
+    await prisma.mission.delete({
+      where: { id: req.params.id }
+    });
+
+    res.json({ deleted: true, id: mission.id });
+  } catch (error) {
+    console.error('[API] DELETE /api/missions/:id failed:', error.message);
+    res.status(500).json({ error: 'Failed to delete mission' });
+  }
+});

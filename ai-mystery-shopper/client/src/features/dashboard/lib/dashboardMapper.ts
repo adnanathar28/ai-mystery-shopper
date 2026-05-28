@@ -1,9 +1,5 @@
 import { API_BASE_URL } from "../../../config/env";
-import {
-  latestIssues as fallbackIssues,
-  liveMission as fallbackLiveMission,
-  metricCards as fallbackMetricCards,
-} from "../../../data/dashboardData";
+import { liveMission as fallbackLiveMission } from "../../../data/dashboardData";
 import { fetchMissionById, fetchMissions } from "../../../services/api";
 import { Issue, LiveMission, MetricCard, MissionHistoryItem } from "../../../types/dashboard";
 import { MissionDetailsApi, MissionListItemApi } from "../../../types/api";
@@ -57,18 +53,23 @@ export async function loadDashboardBundle(): Promise<DashboardBundle> {
         { title: "Avg Friction Score", value: avg.toFixed(1), trend: { value: "Live", direction: "flat" }, hint: "Lower is healthier", icon: "friction" },
         { title: "Critical Failures", value: String(critical), trend: { value: "Live", direction: "flat" }, hint: "Score >= 50", icon: "critical" },
       ]
-    : fallbackMetricCards;
+    : [
+        { title: "Runs Today", value: "0", trend: { value: "Live", direction: "flat" }, hint: "24h mission volume", icon: "runs" },
+        { title: "Issues Detected", value: "0", trend: { value: "Live", direction: "flat" }, hint: "Non-healthy diagnoses", icon: "issues" },
+        { title: "Avg Friction Score", value: "0.0", trend: { value: "Live", direction: "flat" }, hint: "Lower is healthier", icon: "friction" },
+        { title: "Critical Failures", value: "0", trend: { value: "Live", direction: "flat" }, hint: "Score >= 50", icon: "critical" },
+      ];
 
   const issues: Issue[] = missionDetails.length
-    ? missionDetails.slice(0, 6).map((m, idx) => ({
+    ? missionDetails.slice(0, 6).map((m) => ({
         id: m.id,
         missionId: m.id,
         severity: ((m.confusionScore || 0) >= 50 ? "P0" : (m.confusionScore || 0) >= 30 ? "P1" : "P2") as "P0" | "P1" | "P2",
         diagnosis: m.topDiagnosis || "Healthy",
         summary: m.steps.find((s) => !!s.thought)?.thought || "Mission completed with no extended RCA summary.",
-        image: m.screenshots[0]?.imageUrl ? `${API_BASE_URL}${m.screenshots[0].imageUrl}` : fallbackIssues[idx % fallbackIssues.length].image,
+        image: m.screenshots[0]?.imageUrl ? `${API_BASE_URL}${m.screenshots[0].imageUrl}` : "",
       }))
-    : fallbackIssues;
+    : [];
 
   const latest = missionDetails[0];
   const liveMission: LiveMission = latest
