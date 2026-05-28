@@ -28,16 +28,16 @@ export function AnalyticsCards({ cards }: Props) {
             transition={{ delay: 0.05 * index }}
             whileHover={{ y: -3 }}
           >
-            <SurfaceCard className="group transition-colors hover:border-slate-300">
+            <SurfaceCard className="group transition-colors hover:border-slate-700">
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">{card.title}</span>
-                <span className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-500 transition group-hover:text-indigo-600">
+                <span className="rounded-lg border border-slate-800 bg-slate-900 p-2 text-slate-400 transition group-hover:text-indigo-300">
                   <Icon size={14} />
                 </span>
               </div>
-              <p className="text-3xl font-semibold leading-none text-slate-900">{card.value}</p>
+              <p className="text-3xl font-semibold leading-none text-slate-100">{card.value}</p>
               <div className="mt-3 flex items-center justify-between text-xs">
-                <span className={`inline-flex items-center gap-1 font-medium ${trendUp ? "text-emerald-700" : "text-amber-700"}`}>
+                <span className={`inline-flex items-center gap-1 font-medium ${trendUp ? "text-emerald-300" : "text-amber-300"}`}>
                   {trendUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                   {card.trend.value}
                 </span>
