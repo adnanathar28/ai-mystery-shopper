@@ -27,8 +27,6 @@ export function RunReportPage() {
   if (loading) return <DashboardLoading />;
   if (!mission) return <EmptyState title="Run not found" message="The selected mission report is unavailable." />;
 
-  const canDeleteFaulty = (mission.confusionScore ?? 0) >= 30 || mission.status.toLowerCase().includes("fail");
-
   const handleDelete = async () => {
     const approved = window.confirm("Delete this faulty run and all related evidence?");
     if (!approved) return;
@@ -57,15 +55,13 @@ export function RunReportPage() {
             <button onClick={() => navigate(`/evidence?missionId=${mission.id}`)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700">
               Open Evidence
             </button>
-            {canDeleteFaulty ? (
-              <button
-                disabled={deleting}
-                onClick={handleDelete}
-                className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700 disabled:opacity-60"
-              >
-                {deleting ? "Deleting..." : "Delete Faulty Run"}
-              </button>
-            ) : null}
+            <button
+              disabled={deleting}
+              onClick={handleDelete}
+              className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700 disabled:opacity-60"
+            >
+              {deleting ? "Deleting..." : "Delete Run"}
+            </button>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">

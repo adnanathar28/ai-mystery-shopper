@@ -55,7 +55,7 @@ export function MissionHistoryTable({ rows, onOpenReport, onViewEvidence, onDele
                     <button onClick={() => onOpenReport(row.id)} className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
                       Report
                     </button>
-                    {onDeleteFaulty && row.status !== "Smooth" ? (
+                    {onDeleteFaulty ? (
                       <button
                         onClick={() => onDeleteFaulty(row.id)}
                         className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs text-rose-700"
