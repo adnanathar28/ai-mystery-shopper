@@ -52,8 +52,8 @@ export function DashboardPage({ refreshToken, runningMission }: Props) {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_1fr]">
         <LiveMissionPanel mission={bundle.liveMission} />
         <SlackPreviewPanel
-          missionTitle={bundle.liveMission.goal}
-          diagnosis={bundle.issues[0]?.diagnosis || "Healthy"}
+          missionTitle={bundle.liveMission?.goal}
+          diagnosis={bundle.issues[0]?.diagnosis}
           frictionScore={bundle.historyRows[0]?.frictionScore || 0}
         />
       </section>

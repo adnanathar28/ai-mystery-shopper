@@ -4,7 +4,7 @@ import { SurfaceCard } from "../../../components/ui/SurfaceCard";
 import { LiveMission } from "../../../types/dashboard";
 
 type Props = {
-  mission: LiveMission;
+  mission: LiveMission | null;
 };
 
 const statusStyles = {
@@ -14,6 +14,17 @@ const statusStyles = {
 };
 
 export function LiveMissionPanel({ mission }: Props) {
+  if (!mission) {
+    return (
+      <SurfaceCard className="overflow-hidden p-0">
+        <div className="p-5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">Live Mission</p>
+          <p className="mt-3 text-sm text-slate-400">No active or recent missions yet.</p>
+        </div>
+      </SurfaceCard>
+    );
+  }
+
   return (
     <SurfaceCard className="overflow-hidden p-0">
       <div className="p-5">
