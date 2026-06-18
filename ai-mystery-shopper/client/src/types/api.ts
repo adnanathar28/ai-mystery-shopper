@@ -79,3 +79,15 @@ export type ShopResponseApi = {
     }>;
   };
 };
+
+export type HumanGateStatusApi = {
+  active: boolean;
+  reason: string;
+  url: string;
+  since: number | null;
+};
+
+export type HumanGateResumeApi = {
+  resumed: boolean;
+  message: string;
+};

@@ -45,11 +45,11 @@ export function DashboardPage({ refreshToken, runningMission }: Props) {
   if (loading || !bundle) return <DashboardLoading />;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4 lg:space-y-5">
-      {error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</p> : null}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-7">
+      {error ? <p className="rounded-md border border-red-500/25 bg-red-500/10 px-4 py-2 text-sm text-red-300">{error}</p> : null}
       <AnalyticsCards cards={bundle.metricCards} />
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_1fr]">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.7fr_0.8fr]">
         <LiveMissionPanel mission={bundle.liveMission} />
         <SlackPreviewPanel
           missionTitle={bundle.liveMission?.goal}

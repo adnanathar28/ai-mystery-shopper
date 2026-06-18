@@ -9,16 +9,15 @@ type Props = {
 
 export function SlackPreviewPanel({ missionTitle, diagnosis, frictionScore }: Props) {
   return (
-    <SurfaceCard>
-      <div className="mb-4 flex items-center gap-2">
-        <MessageSquareText size={16} className="text-violet-300" />
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Slack Preview</h3>
+    <SurfaceCard className="py-3.5">
+      <div className="mb-3 flex items-center gap-2">
+        <MessageSquareText size={15} className="text-purple-300" />
+        <h3 className="text-sm font-semibold text-zinc-200">Slack Preview</h3>
       </div>
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-        <p className="text-sm font-semibold text-slate-100">Friction Alert: {diagnosis || "—"}</p>
-        <p className="mt-1 text-sm text-slate-300">Mission: {missionTitle || "—"}</p>
-        <p className="mt-1 text-sm text-slate-300">Confusion Score: {frictionScore}/100</p>
-        <p className="mt-2 text-xs text-slate-500">Preview of outbound alert payload for engineering triage.</p>
+      <div className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
+        <p className="truncate text-sm font-medium text-zinc-100">Friction Alert: {diagnosis || "-"}</p>
+        <p className="truncate text-sm text-zinc-400">Mission: {missionTitle || "-"}</p>
+        <p className="text-sm text-zinc-400">Confusion Score: {frictionScore}/100</p>
       </div>
     </SurfaceCard>
   );

@@ -1,10 +1,17 @@
 import axios from "axios";
 import { API_BASE_URL } from "../config/env";
-import { MissionDetailsResponseApi, MissionsResponseApi, ShopRequest, ShopResponseApi } from "../types/api";
+import {
+  HumanGateResumeApi,
+  HumanGateStatusApi,
+  MissionDetailsResponseApi,
+  MissionsResponseApi,
+  ShopRequest,
+  ShopResponseApi,
+} from "../types/api";
 
 const http = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 120000,
+  timeout: 30 * 60 * 1000,
 });
 
 export async function fetchMissions(page = 1, pageSize = 20) {
@@ -26,5 +33,15 @@ export async function deleteMission(id: string, force = false) {
   const { data } = await http.delete<{ deleted: boolean; id: string }>(`/api/missions/${id}`, {
     params: force ? { force: "true" } : undefined,
   });
+  return data;
+}
+
+export async function fetchHumanGateStatus() {
+  const { data } = await http.get<HumanGateStatusApi>("/api/human/status");
+  return data;
+}
+
+export async function resumeHumanGate() {
+  const { data } = await http.post<HumanGateResumeApi>("/api/human/resume");
   return data;
 }

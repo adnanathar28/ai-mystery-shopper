@@ -7,5 +7,5 @@ type SurfaceCardProps = {
 };
 
 export function SurfaceCard({ children, className }: SurfaceCardProps) {
-  return <div className={cn("rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-[0_12px_30px_rgba(2,6,23,0.45)]", className)}>{children}</div>;
+  return <div className={cn("rounded-lg border border-zinc-800 bg-zinc-950 p-4", className)}>{children}</div>;
 }
