@@ -64,7 +64,7 @@ The system doesn't just complain; it suggests solutions.
 
 ---
 
-## 🏗️ Tech Stack
+## 🏗️ Tech Stack1
 
 ### Frontend (Dashboard)
 * **React:** Interactive dashboard to view timeline runs.
@@ -82,7 +82,7 @@ The system doesn't just complain; it suggests solutions.
 
 ---
 
-## Agent Runtime Notes
+## Agent and Runtime Notes
 
 - Prompt sections are modularized in `ai-mystery-shopper/src/prompts/promptSections.js`.
 - Prompt assembly happens in `ai-mystery-shopper/src/prompts/systemPrompt.js`.
